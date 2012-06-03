@@ -94,7 +94,7 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(fbdev_drv_ladir)"
 LTLIBRARIES = $(fbdev_drv_la_LTLIBRARIES)
 fbdev_drv_la_LIBADD =
-am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo
+am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo exa_dma_emu.lo exa_unused.lo exa_null.lo
 fbdev_drv_la_OBJECTS = $(am_fbdev_drv_la_OBJECTS)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -288,7 +288,10 @@ fbdev_drv_la_LDFLAGS = -module -avoid-version
 fbdev_drv_ladir = ${exec_prefix}/lib/xorg/modules/drivers
 fbdev_drv_la_SOURCES = \
          fbdev.c \
-         exa_acc.c
+         exa_acc.c \
+         exa_dma_emu.c \
+         exa_unused.c \
+         exa_null.c
 
 all: all-am
 

@@ -11,21 +11,6 @@
 
 #include "exa_acc.h"
 
-void *kern_alloc(size_t);
-
-int kern_dma_prepare(void *);
-int kern_dma_kick(void *);
-int kern_dma_prepare_kick_wait(void *);
-int kern_dma_prepare_kick(void *ptr);
-int kern_dma_wait_one(void *);
-int kern_dma_wait_all(unsigned int bytesPending);
-
-#define MY_ASSERT(x) if (!(x)) *(int *)0 = 0;
-//#define MY_ASSERT(x) ;
-#define DEREFERENCE_TEST
-#define STRADDLE_TEST
-#define BREAK_PAGES
-
 /******** GENERIC STUFF ******/
 struct CopyDetails
 {
@@ -76,6 +61,7 @@ unsigned int g_actualStarts = 0;
 struct DmaControlBlock *g_pEmuCB = 0;
 
 /******* DMA ********/
+/**** starting ******/
 
 inline int RunDma(struct DmaControlBlock *pCB)
 {
@@ -124,6 +110,7 @@ inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
 		return FALSE;
 }
 
+/********* waiting ************/
 inline BOOL WaitDma(BOOL force)
 {
 	if (force)
@@ -167,108 +154,71 @@ inline void RealWaitDma(unsigned int bytesPending)
 	}
 }
 
-inline int EmulateDma(struct DmaControlBlock *pCB)
+/****** DMA allocation ****/
+
+inline struct DmaControlBlock *GetDmaBlock(void)
 {
-	int dmas = 0;
-
-#ifdef DEREFERENCE_TEST
-	if (pCB->m_transferInfo == pCB->m_transferInfo);
-#endif
-	while (pCB)
+	if (!g_pDmaBuffer)
 	{
-//		xf86DrvMsg(0, X_INFO, "dma block at %p\n", pCB);
-		//pick out the interesting fields from TI
-		unsigned int src_inc = (pCB->m_transferInfo >> 8) & 0x1;
-		unsigned int td_mode = (pCB->m_transferInfo >> 1) & 0x1;
-
-		//source/dest base pointers we'll increment
-		unsigned char *pSource = (unsigned char *)pCB->m_pSourceAddr;
-		unsigned char *pDest = (unsigned char *)pCB->m_pDestAddr;
-
-#ifdef DEREFERENCE_TEST
-		if (*pSource == *pSource);
-		if (*pDest == *pDest);
-#endif
-
-		if (td_mode)
-		{
-			//x, y dims
-			unsigned int ylength = (pCB->m_xferLen & 0x3fffffff) >> 16;
-			unsigned int xlength = pCB->m_xferLen & 0xffff;
-
-			//stride to add at the end of each copied row
-			unsigned int dest_stride = pCB->m_tdStride >> 16;
-			unsigned int source_stride = pCB->m_tdStride & 0xffff;
-			int source_offset = 0;
-
-//			xf86DrvMsg(0, X_INFO, "\t%p->%p (%dx%d, +%d +%d (%d))\n",
-//					pSource, pDest, xlength, ylength,
-//					source_stride, dest_stride, src_inc);
-
-			//do the copy
-			int x, y;
-			for (y = 0; y < ylength; y++)
-			{
-				pSource -= source_offset;
-				source_offset = 0;
-
-				//x loop
-				for (x = 0; x < xlength; x++)
-				{
-					*pDest = *pSource;
-					pDest++;
-					pSource++;
-
-					if (!src_inc)
-					{
-						source_offset++;
-						if (source_offset == 4)
-						{
-							source_offset = 0;
-							pSource -= 4;
-						}
-					}
-				}
-
-				//next row
-				pSource += source_stride;
-				pDest += dest_stride;
-			}
-		}
-		else
-		{
-			//basic copy
-			unsigned int length = pCB->m_xferLen & 0x3fffffff;
-			int source_offset = 0;
-
-//			xf86DrvMsg(0, X_INFO, "\t%p->%p (%d bytes (%d))\n",
-//					pSource, pDest, length, src_inc);
-
-			int count;
-			for (count = 0; count < length; count++)
-			{
-				*pDest = *pSource;
-				pDest++;
-				pSource++;
-				source_offset++;
-
-				if (!src_inc && source_offset == 4)
-				{
-					source_offset = 0;
-					pSource -= 4;
-				}
-			}
-		}
-
-		//count how many dmas we've done
-		dmas++;
-
-		//move to the next dma
-		pCB = pCB->m_pNext;
+		g_pDmaBuffer = (struct DmaControlBlock *)kern_alloc(4096 * 50);
+		MY_ASSERT(g_pDmaBuffer);
+		//g_pDmaBuffer->m_pNext = 0xcdcdcdcd;
+//		memset(g_pDmaBuffer, 0xcd, 4096 * 50);
 	}
 
-	return dmas;
+	BOOL wasHead = g_headOfDma;
+	g_headOfDma = FALSE;
+
+	if (g_dmaTail == 0)
+		return &g_pDmaBuffer[g_dmaTail++];			//first in the list, just return it
+	else if (g_dmaTail < 128 * 50)
+	{
+		if (!wasHead)						//patch up everything bar the head
+			g_pDmaBuffer[g_dmaTail - 1].m_pNext = &g_pDmaBuffer[g_dmaTail];
+		return &g_pDmaBuffer[g_dmaTail++];
+	}
+	else
+	{	//out of list space, kick the lot and start fresh
+		MY_ASSERT(g_dmaUnkickedHead != g_dmaTail || g_dmaPending == TRUE);
+
+		if (g_dmaUnkickedHead != g_dmaTail)
+		{
+			if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE))
+				g_dmaUnkickedHead = g_dmaTail;
+		}
+
+		WaitMarker(0, 0);
+		//head will be reset, but we need to clear it before the return
+		g_headOfDma = FALSE;
+		MY_ASSERT(g_dmaTail == 0);
+		return &g_pDmaBuffer[g_dmaTail++];
+	}
 }
+
+inline unsigned char *GetSolidBuffer(unsigned int bytes)
+{
+	const unsigned int solid_size = 4096 * 10;		//page multiple
+
+	if (!g_pSolidBuffer)
+	{
+		g_pSolidBuffer = kern_alloc(solid_size);
+		MY_ASSERT(g_pSolidBuffer);
+		g_solidOffset = 0;
+	}
+
+	if (g_solidOffset + bytes >= solid_size)
+	{
+		fprintf(stderr, "ran out of solid space...hopefully flushing\n");
+		return 0;
+	}
+
+	unsigned char *p = &g_pSolidBuffer[g_solidOffset];
+	g_solidOffset += bytes;
+
+	return p;
+}
+
+/******** COPIES *********/
 
 inline void CopyLinear(struct DmaControlBlock *pCB,
 		void *pDestAddr, void *pSourceAddr, unsigned int length, unsigned int srcInc)
@@ -574,68 +524,6 @@ inline void Copy2D(struct DmaControlBlock *pCB,
 	pCB->m_pNext = 0;
 }
 
-inline struct DmaControlBlock *GetDmaBlock(void)
-{
-	if (!g_pDmaBuffer)
-	{
-		g_pDmaBuffer = (struct DmaControlBlock *)kern_alloc(4096 * 50);
-		MY_ASSERT(g_pDmaBuffer);
-		//g_pDmaBuffer->m_pNext = 0xcdcdcdcd;
-//		memset(g_pDmaBuffer, 0xcd, 4096 * 50);
-	}
-
-	BOOL wasHead = g_headOfDma;
-	g_headOfDma = FALSE;
-
-	if (g_dmaTail == 0)
-		return &g_pDmaBuffer[g_dmaTail++];			//first in the list, just return it
-	else if (g_dmaTail < 128 * 50)
-	{
-		if (!wasHead)						//patch up everything bar the head
-			g_pDmaBuffer[g_dmaTail - 1].m_pNext = &g_pDmaBuffer[g_dmaTail];
-		return &g_pDmaBuffer[g_dmaTail++];
-	}
-	else
-	{	//out of list space, kick the lot and start fresh
-		MY_ASSERT(g_dmaUnkickedHead != g_dmaTail || g_dmaPending == TRUE);
-
-		if (g_dmaUnkickedHead != g_dmaTail)
-		{
-			if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE))
-				g_dmaUnkickedHead = g_dmaTail;
-		}
-
-		WaitMarker(0, 0);
-		//head will be reset, but we need to clear it before the return
-		g_headOfDma = FALSE;
-		MY_ASSERT(g_dmaTail == 0);
-		return &g_pDmaBuffer[g_dmaTail++];
-	}
-}
-
-inline unsigned char *GetSolidBuffer(unsigned int bytes)
-{
-	const unsigned int solid_size = 4096 * 10;		//page multiple
-
-	if (!g_pSolidBuffer)
-	{
-		g_pSolidBuffer = kern_alloc(solid_size);
-		MY_ASSERT(g_pSolidBuffer);
-		g_solidOffset = 0;
-	}
-
-	if (g_solidOffset + bytes >= solid_size)
-	{
-		fprintf(stderr, "ran out of solid space...hopefully flushing\n");
-		return 0;
-	}
-
-	unsigned char *p = &g_pSolidBuffer[g_solidOffset];
-	g_solidOffset += bytes;
-
-	return p;
-}
-
 /******** EXA ********/
 
 static CARD8 *g_pOffscreenBase;
@@ -709,80 +597,6 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 	}
 }
 
-struct SysPtrCopy
-{
-	PixmapPtr m_pPixmap;
-	void *m_pSysPtr;
-} g_sysPtrCopies[EXA_NUM_PREPARE_INDICES];
-
-/*Bool PrepareAccess(PixmapPtr pPix, int index)
-{
-	static int run_once = 0;
-	if (!run_once)
-	{
-		run_once = 1;
-		int count;
-		for (count = 0; count < EXA_NUM_PREPARE_INDICES; count++)
-		{
-			g_sysPtrCopies[count].m_pPixmap = 0;
-			g_sysPtrCopies[count].m_pSysPtr = 0;
-		}
-	}
-
-	struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(pPix);
-	if (!pInner)
-		return FALSE;
-	if (!pInner->m_pData)
-		return FALSE;
-
-	xf86DrvMsg(0, X_DEFAULT, "%s %p %d\n", __FUNCTION__, pPix, index);
-	WaitMarker(pPix->drawable.pScreen, 0);
-
-	//find a slot
-	int found = 0;
-	int count;
-
-	for (count = 0; count < EXA_NUM_PREPARE_INDICES; count++)
-		if (!g_sysPtrCopies[count].m_pPixmap)
-		{
-			g_sysPtrCopies[count].m_pPixmap = pPix;
-			g_sysPtrCopies[count].m_pSysPtr = pPix->devPrivate.ptr;
-
-			pPix->devPrivate.ptr = pInner->m_pData;
-
-			found = 1;
-			break;
-		}
-
-	MY_ASSERT(found);
-
-	return TRUE;
-}
-
-void FinishAccess(PixmapPtr pPix, int index)
-{
-	xf86DrvMsg(0, X_DEFAULT, "%s %p %d\n", __FUNCTION__, pPix, index);
-
-	struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(pPix);
-	MY_ASSERT(pInner);
-	MY_ASSERT(pInner->m_pData);
-
-	//find the slot
-	int found = 0;
-	int count;
-
-	for (count = 0; count < EXA_NUM_PREPARE_INDICES; count++)
-		if (g_sysPtrCopies[count].m_pPixmap == pPix)
-		{
-			g_sysPtrCopies[count].m_pPixmap = 0;
-			pPix->devPrivate.ptr = g_sysPtrCopies[count].m_pSysPtr;
-
-			found = 1;
-			break;
-		}
-
-	MY_ASSERT(found);
-}*/
 
 Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 		Pixel fg)
@@ -1458,146 +1272,5 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 	return TRUE;
 }
 
-void *CreatePixmap2(ScreenPtr pScreen, int width, int height,
-                            int depth, int usage_hint, int bitsPerPixel,
-                            int *new_fb_pitch)
-{
-	struct DmaPixmap *pInner = malloc(sizeof(struct DmaPixmap));
 
-	if (!pInner)
-		return 0;
-
-	pInner->m_width = width;
-	pInner->m_height = height;
-	pInner->m_depth = depth;
-	pInner->m_bpp = bitsPerPixel;
-	pInner->m_pitchBytes = width * bitsPerPixel / 8;
-
-	MY_ASSERT(new_fb_pitch);
-
-	if (width == 0 || height == 0)
-	{
-		pInner->m_pData = 0;
-		*new_fb_pitch = 0;
-		return pInner;
-	}
-
-	pInner->m_pData = malloc(height * pInner->m_pitchBytes);
-	*new_fb_pitch = pInner->m_pitchBytes;
-
-	if (!pInner->m_pData)
-	{
-		free(pInner);
-		return FALSE;
-	}
-
-	return pInner;
-}
-
-void DestroyPixmap(ScreenPtr pScreen, void *driverPriv)
-{
-	struct DmaPixmap *pInner = (struct DmaPixmap *)driverPriv;
-
-	if (!pInner)
-		return;
-
-	free(pInner->m_pData);
-	free(pInner);
-}
-
-Bool PixmapIsOffscreen(PixmapPtr pPix)
-{
-	if (!pPix)
-		return FALSE;
-	if (!exaGetPixmapDriverPrivate(pPix))
-		return FALSE;
-
-	return TRUE;
-}
-
-Bool ModifyPixmapHeader(PixmapPtr pPixmap, int width, int height,
-                                int depth, int bitsPerPixel, int devKind,
-                                pointer pPixData)
-{
-	if (!pPixmap)
-		return FALSE;
-
-	struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(pPixmap);
-	if (!pInner)
-		return FALSE;
-
-	if (width > 0)
-		pInner->m_width = width;
-
-	if (height > 0)
-		pInner->m_height = height;
-
-	if (depth > 0)
-		pInner->m_depth = depth;
-
-	if (bitsPerPixel > 0)
-		pInner->m_bpp = bitsPerPixel;
-
-	if (pPixData)
-		pInner->m_pData = pPixData;
-
-	if (devKind > 0)
-		pInner->m_pitchBytes = devKind;
-
-	pPixmap->drawable.width = pInner->m_width;
-	pPixmap->drawable.height = pInner->m_height;
-	pPixmap->drawable.bitsPerPixel = pInner->m_bpp;
-	pPixmap->drawable.depth = pInner->m_depth;
-	pPixmap->devPrivate.ptr = pInner->m_pData;
-	pPixmap->devKind = pInner->m_pitchBytes;
-
-	return TRUE;
-}
-
-/**************************/
-// null versions
-
-Bool NullPrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask, Pixel fg)
-{
-	return TRUE;
-}
-
-void NullSolid(PixmapPtr pPixmap, int x1, int y1, int x2, int y2)
-{
-}
-
-void NullDoneSolid(PixmapPtr p)
-{
-}
-
-Bool NullPrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
-		int dy, int alu, Pixel planemask)
-{
-	return TRUE;
-}
-
-void NullCopy(PixmapPtr pDstPixmap, int srcX, int srcY,
-		int dstX, int dstY, int width, int height)
-{
-}
-
-void NullDoneCopy(PixmapPtr p)
-{
-}
-
-Bool NullDownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
-		char *dst, int dst_pitch)
-{
-	return TRUE;
-}
-
-Bool NullUploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
-		char *src, int src_pitch)
-{
-	return TRUE;
-}
-
-void NullWaitMarker(ScreenPtr pScreen, int Marker)
-{
-}
 

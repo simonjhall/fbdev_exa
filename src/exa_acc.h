@@ -106,4 +106,22 @@ void EmulateWaitDma(void);
 int RealDma(struct DmaControlBlock *);
 void RealWaitDma(unsigned int);
 
+/////////////////////////////////////
+
+void *kern_alloc(size_t);
+
+int kern_dma_prepare(void *);
+int kern_dma_kick(void *);
+int kern_dma_prepare_kick_wait(void *);
+int kern_dma_prepare_kick(void *ptr);
+int kern_dma_wait_one(void *);
+int kern_dma_wait_all(unsigned int bytesPending);
+
+#define MY_ASSERT(x) if (!(x)) *(int *)0 = 0;
+//#define MY_ASSERT(x) ;
+#define DEREFERENCE_TEST
+#define STRADDLE_TEST
+#define BREAK_PAGES
+
+
 #endif
