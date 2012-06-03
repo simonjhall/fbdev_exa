@@ -16,10 +16,12 @@ void *kern_alloc(size_t);
 int kern_dma_prepare(void *);
 int kern_dma_kick(void *);
 int kern_dma_prepare_kick_wait(void *);
+int kern_dma_prepare_kick(void *ptr);
 int kern_dma_wait_one(void *);
-int kern_dma_wait_all(void);
+int kern_dma_wait_all(unsigned int bytesPending);
 
 #define MY_ASSERT(x) if (!(x)) *(int *)0 = 0;
+//#define MY_ASSERT(x) ;
 #define DEREFERENCE_TEST
 #define STRADDLE_TEST
 #define BREAK_PAGES
@@ -53,26 +55,125 @@ struct UpDownloadDetails
 } g_upDownloadDetails;
 
 struct DmaControlBlock *g_pDmaBuffer = 0;
-unsigned int g_dmaOffset = 0;
+unsigned int g_dmaUnkickedHead = 0;
+unsigned int g_dmaTail = 0;
 unsigned char *g_pSolidBuffer = 0;
 unsigned int g_solidOffset = 0;
 unsigned int g_highestSolid = 0;
+BOOL g_dmaPending = FALSE;
+unsigned int g_bytesPending = 0;
+unsigned int g_totalBytesPendingForced = 0;
+unsigned int g_totalBytesPendingUnforced = 0;
+BOOL g_headOfDma = TRUE;
+
+unsigned int g_forcedWaits = 0;
+unsigned int g_unforcedWaits = 0;
+unsigned int g_forcedStarts = 0;
+unsigned int g_unforcedStarts = 0;
+unsigned int g_actualWaits = 0;
+unsigned int g_actualStarts = 0;
+
+struct DmaControlBlock *g_pEmuCB = 0;
 
 /******* DMA ********/
 
 inline int RunDma(struct DmaControlBlock *pCB)
 {
+	MY_ASSERT(0);
 	if (pCB->m_pNext == 0xcdcdcdcd)
 		return 0;
-//	return EmulateDma(pCB);
+	return EmulateDma(pCB);
 //	kern_dma_prepare(pCB);
-	return kern_dma_prepare_kick_wait(pCB);
+//	return kern_dma_prepare_kick_wait(pCB);
 //	return 0;
+}
+
+inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
+{
+	if (force)
+	{
+		g_forcedStarts++;
+		g_totalBytesPendingForced += g_bytesPending;
+	}
+	else
+	{
+		g_unforcedStarts++;
+		g_totalBytesPendingUnforced += g_bytesPending;
+	}
+
+//	MY_ASSERT(pCB->m_pNext != 0xcdcdcdcd)
+
+	if (WaitDma(force))
+	{
+		MY_ASSERT(g_dmaPending == FALSE);
+
+		g_dmaPending = TRUE;			//stuff's in the system and we need to ensure we don't overload our DMA controller
+		g_headOfDma = TRUE;				//allocations shouldn't patch up previous DMA CBs
+
+	//	return EmulateDma(pCB);
+		MY_ASSERT(g_pEmuCB == 0);
+		g_pEmuCB = pCB;
+//		kern_dma_prepare(pCB);
+//		return kern_dma_prepare_kick_wait(pCB);
+		kern_dma_prepare_kick(pCB);
+		g_actualStarts++;
+
+		return TRUE;
+	}
+	else
+		return FALSE;
+}
+
+inline BOOL WaitDma(BOOL force)
+{
+	if (force)
+		g_forcedWaits++;
+	else
+		g_unforcedWaits++;
+
+	if (force || (g_bytesPending >= 8192))
+//	if (1)
+	{
+		RealWaitDma(g_bytesPending);
+		g_dmaPending = FALSE;
+
+		return TRUE;
+	}
+	else
+		return FALSE;
+}
+
+inline void EmulateWaitDma(void)
+{
+	if(g_dmaPending)
+	{
+		MY_ASSERT(g_pEmuCB);
+		EmulateDma(g_pEmuCB);
+		g_pEmuCB = 0;
+
+		g_bytesPending = 0;
+	}
+}
+
+inline void RealWaitDma(unsigned int bytesPending)
+{
+	if(g_dmaPending)
+	{
+		MY_ASSERT(g_pEmuCB);
+		kern_dma_wait_all(g_bytesPending);
+		g_pEmuCB = 0;
+		g_actualWaits++;
+		g_bytesPending = 0;
+	}
 }
 
 inline int EmulateDma(struct DmaControlBlock *pCB)
 {
 	int dmas = 0;
+
+#ifdef DEREFERENCE_TEST
+	if (pCB->m_transferInfo == pCB->m_transferInfo);
+#endif
 	while (pCB)
 	{
 //		xf86DrvMsg(0, X_INFO, "dma block at %p\n", pCB);
@@ -83,6 +184,11 @@ inline int EmulateDma(struct DmaControlBlock *pCB)
 		//source/dest base pointers we'll increment
 		unsigned char *pSource = (unsigned char *)pCB->m_pSourceAddr;
 		unsigned char *pDest = (unsigned char *)pCB->m_pDestAddr;
+
+#ifdef DEREFERENCE_TEST
+		if (*pSource == *pSource);
+		if (*pDest == *pDest);
+#endif
 
 		if (td_mode)
 		{
@@ -225,6 +331,8 @@ inline void CopyLinear(struct DmaControlBlock *pCB,
 	pCB->m_pNext = 0;
 
 	pCB->m_blank1 = pCB->m_blank2 = 0;
+
+	g_bytesPending += length;
 }
 
 static inline void ForwardCopy(unsigned char *pDst, unsigned char *pSrc, int bytes)
@@ -472,27 +580,42 @@ inline struct DmaControlBlock *GetDmaBlock(void)
 	{
 		g_pDmaBuffer = (struct DmaControlBlock *)kern_alloc(4096 * 50);
 		MY_ASSERT(g_pDmaBuffer);
-		g_pDmaBuffer->m_pNext = 0xcdcdcdcd;
+		//g_pDmaBuffer->m_pNext = 0xcdcdcdcd;
+//		memset(g_pDmaBuffer, 0xcd, 4096 * 50);
 	}
 
-	if (g_dmaOffset == 0)
-		return &g_pDmaBuffer[g_dmaOffset++];
-	else if (g_dmaOffset < 128 * 50)
+	BOOL wasHead = g_headOfDma;
+	g_headOfDma = FALSE;
+
+	if (g_dmaTail == 0)
+		return &g_pDmaBuffer[g_dmaTail++];			//first in the list, just return it
+	else if (g_dmaTail < 128 * 50)
 	{
-		g_pDmaBuffer[g_dmaOffset - 1].m_pNext = &g_pDmaBuffer[g_dmaOffset];
-		return &g_pDmaBuffer[g_dmaOffset++];
+		if (!wasHead)						//patch up everything bar the head
+			g_pDmaBuffer[g_dmaTail - 1].m_pNext = &g_pDmaBuffer[g_dmaTail];
+		return &g_pDmaBuffer[g_dmaTail++];
 	}
 	else
-	{
+	{	//out of list space, kick the lot and start fresh
+		MY_ASSERT(g_dmaUnkickedHead != g_dmaTail || g_dmaPending == TRUE);
+
+		if (g_dmaUnkickedHead != g_dmaTail)
+		{
+			if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE))
+				g_dmaUnkickedHead = g_dmaTail;
+		}
+
 		WaitMarker(0, 0);
-		MY_ASSERT(g_dmaOffset == 0);
-		return &g_pDmaBuffer[g_dmaOffset++];
+		//head will be reset, but we need to clear it before the return
+		g_headOfDma = FALSE;
+		MY_ASSERT(g_dmaTail == 0);
+		return &g_pDmaBuffer[g_dmaTail++];
 	}
 }
 
 inline unsigned char *GetSolidBuffer(unsigned int bytes)
 {
-	const unsigned int solid_size = 16384;
+	const unsigned int solid_size = 4096 * 10;		//page multiple
 
 	if (!g_pSolidBuffer)
 	{
@@ -554,15 +677,36 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 
 	time_t start = clock();
 
-	static int dmas = 0;
-	int kick = RunDma(g_pDmaBuffer);
-	dmas += kick;
+//	static int dmas = 0;
+	//int kick = RunDma(g_pDmaBuffer);
+//	int kick = StartDma(g_pDmaBuffer);
+	if (g_dmaUnkickedHead != g_dmaTail)
+	{
+		StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE);
+		g_dmaUnkickedHead = g_dmaTail;
+	}
 
-	/*xf86DrvMsg(0, X_INFO, "kick %d dmas, solid %d, took %.3f ms\n", g_dmaOffset, g_solidOffset,
+	if (g_dmaPending)
+		WaitDma(TRUE);
+//	dmas += kick;
+
+	/*xf86DrvMsg(0, X_INFO, "kick %d dmas, solid %d, took %.3f ms\n", g_dmaTail, g_solidOffset,
 			(float)(clock() - start) / CLOCKS_PER_SEC * 1000.0f);*/
 
-	g_dmaOffset = 0;
-	memset(g_pDmaBuffer, 0xcd, 32);
+	g_dmaTail = 0;			//write into CB 0
+	g_dmaUnkickedHead = 0;	//and the head of any work starts again at zero
+	g_headOfDma = TRUE;			//patch up -1 CB next pointers
+//	memset(g_pDmaBuffer, 0xcd, 32);
+//	memset(g_pDmaBuffer, 0xcd, 4096 * 50);
+
+	static unsigned int last_starts = 0;
+	if (g_actualStarts - last_starts > 1000)
+	{
+		last_starts = g_actualStarts;
+		fprintf(stderr, "actual s/w %d %d, forced s/w %d %d, unforced s/w %d %d, average kick %d %d bytes\n",
+				g_actualStarts, g_actualWaits, g_forcedStarts, g_forcedWaits, g_unforcedStarts, g_unforcedWaits,
+				g_totalBytesPendingForced / g_forcedStarts, g_totalBytesPendingUnforced / g_unforcedStarts);
+	}
 }
 
 struct SysPtrCopy
@@ -571,7 +715,7 @@ struct SysPtrCopy
 	void *m_pSysPtr;
 } g_sysPtrCopies[EXA_NUM_PREPARE_INDICES];
 
-Bool PrepareAccess(PixmapPtr pPix, int index)
+/*Bool PrepareAccess(PixmapPtr pPix, int index)
 {
 	static int run_once = 0;
 	if (!run_once)
@@ -638,7 +782,7 @@ void FinishAccess(PixmapPtr pPix, int index)
 		}
 
 	MY_ASSERT(found);
-}
+}*/
 
 Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 		Pixel fg)
@@ -706,8 +850,20 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 
 	while (!(pSolid = GetSolidBuffer(32)))
 	{
-		fprintf(stderr, "unable to allocate solid space - kicking\n");
-		WaitMarker(g_solidDetails.m_pDst->drawable.pScreen, 0);
+		fprintf(stderr, "unable to allocate solid space - kicking and waiting\n");
+
+		//there could be non-committed work taking up all the solid
+		if (g_dmaUnkickedHead != g_dmaTail)
+		{
+			if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE))
+				g_dmaUnkickedHead = g_dmaTail;
+		}
+
+		//it could be something already enqueued taking it
+		if (g_dmaPending)
+			WaitMarker(g_solidDetails.m_pDst->drawable.pScreen, 0);
+
+		//or simply we simply haven't reset it yet after past work
 		g_solidOffset = 0;
 	}
 
@@ -753,13 +909,22 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 			bpp * width,			//width
 			height,					//height
 			dstPitch - bpp * width);//dest stride
+
 }
 
 void DoneSolid(PixmapPtr p)
 {
 	MY_ASSERT(g_solidDetails.m_pDst == p);
-	//give it a sync point (for future work)
-	exaMarkSync(g_solidDetails.m_pDst->drawable.pScreen);
+
+	if (g_dmaUnkickedHead != g_dmaTail)
+	{
+		//give it a sync point (for future work)
+		exaMarkSync(g_solidDetails.m_pDst->drawable.pScreen);
+
+		if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, FALSE))
+			g_dmaUnkickedHead = g_dmaTail;
+//		WaitMarker(0, 0);
+	}
 }
 
 Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
@@ -859,7 +1024,15 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 void DoneCopy(PixmapPtr p)
 {
 	MY_ASSERT(g_copyDetails.m_pDst == p);
-	exaMarkSync(g_copyDetails.m_pDst->drawable.pScreen);
+
+	if (g_dmaUnkickedHead != g_dmaTail)
+	{
+		exaMarkSync(g_copyDetails.m_pDst->drawable.pScreen);
+
+		if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, FALSE))
+			g_dmaUnkickedHead = g_dmaTail;
+//		WaitMarker(0, 0);
+	}
 }
 
 Bool CheckComposite(int op, PicturePtr pSrcPicture,
@@ -950,6 +1123,7 @@ Bool PrepareComposite(int op, PicturePtr pSrcPicture,
 		return FALSE;
 	}
 
+	MY_ASSERT(0);
 	WaitMarker(0, 0);
 
 	accept++;
@@ -1244,6 +1418,9 @@ Bool DownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 	exaMarkSync(pSrc->drawable.pScreen);
 
 	Download(&g_upDownloadDetails);
+
+	if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, FALSE))
+		g_dmaUnkickedHead = g_dmaTail;
 //	WaitMarker(pSrc->drawable.pScreen, 0);
 
 	return TRUE;
@@ -1273,7 +1450,10 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 
 	Upload(&g_upDownloadDetails);
 
-	WaitMarker(pDst->drawable.pScreen, 0);
+	if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE))
+		g_dmaUnkickedHead = g_dmaTail;
+
+	WaitMarker(pDst->drawable.pScreen, 0);			//seems be necessary
 
 	return TRUE;
 }
@@ -1375,3 +1555,49 @@ Bool ModifyPixmapHeader(PixmapPtr pPixmap, int width, int height,
 }
 
 /**************************/
+// null versions
+
+Bool NullPrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask, Pixel fg)
+{
+	return TRUE;
+}
+
+void NullSolid(PixmapPtr pPixmap, int x1, int y1, int x2, int y2)
+{
+}
+
+void NullDoneSolid(PixmapPtr p)
+{
+}
+
+Bool NullPrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
+		int dy, int alu, Pixel planemask)
+{
+	return TRUE;
+}
+
+void NullCopy(PixmapPtr pDstPixmap, int srcX, int srcY,
+		int dstX, int dstY, int width, int height)
+{
+}
+
+void NullDoneCopy(PixmapPtr p)
+{
+}
+
+Bool NullDownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
+		char *dst, int dst_pitch)
+{
+	return TRUE;
+}
+
+Bool NullUploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
+		char *src, int src_pitch)
+{
+	return TRUE;
+}
+
+void NullWaitMarker(ScreenPtr pScreen, int Marker)
+{
+}
+

@@ -54,6 +54,26 @@ Bool DownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 		char *src, int src_pitch);
 
+///////////////////
+Bool NullPrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask, Pixel fg);
+void NullSolid(PixmapPtr pPixmap, int x1, int y1, int x2, int y2);
+void NullDoneSolid(PixmapPtr p);
+
+Bool NullPrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
+		int dy, int alu, Pixel planemask);
+void NullCopy(PixmapPtr pDstPixmap, int srcX, int srcY,
+		int dstX, int dstY, int width, int height);
+void NullDoneCopy(PixmapPtr p);
+
+Bool NullDownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
+		char *dst, int dst_pitch);
+Bool NullUploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
+		char *src, int src_pitch);
+
+void NullWaitMarker(ScreenPtr pScreen, int Marker);
+////////////////
+
+
 Bool PrepareAccess(PixmapPtr pPix, int index);
 void FinishAccess(PixmapPtr pPix, int index);
 
@@ -78,7 +98,12 @@ struct DmaPixmap
 /////////////////////////////////////
 
 int RunDma(struct DmaControlBlock *);
+BOOL StartDma(struct DmaControlBlock *, BOOL force);
+BOOL WaitDma(BOOL force);
+
 int EmulateDma(struct DmaControlBlock *);
+void EmulateWaitDma(void);
 int RealDma(struct DmaControlBlock *);
+void RealWaitDma(unsigned int);
 
 #endif
