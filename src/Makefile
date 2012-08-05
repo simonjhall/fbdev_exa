@@ -94,7 +94,7 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(fbdev_drv_ladir)"
 LTLIBRARIES = $(fbdev_drv_la_LTLIBRARIES)
 fbdev_drv_la_LIBADD =
-am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo exa_dma_emu.lo exa_unused.lo exa_null.lo
+am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo exa_dma_emu.lo exa_unused.lo exa_null.lo exa_composite.lo exa_upload_download.lo exa_copy.lo exa_copies.lo
 fbdev_drv_la_OBJECTS = $(am_fbdev_drv_la_OBJECTS)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -148,7 +148,7 @@ AWK = mawk
 BASE_CFLAGS =  -Wall -Wpointer-arith -Wmissing-declarations -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Wnested-externs -Wbad-function-cast -Wold-style-definition -Wdeclaration-after-statement -Wunused -Wuninitialized -Wshadow -Wcast-qual -Wmissing-noreturn -Wmissing-format-attribute -Wredundant-decls -Werror=implicit -Werror=nonnull -Werror=init-self -Werror=main -Werror=missing-braces -Werror=sequence-point -Werror=return-type -Werror=trigraphs -Werror=array-bounds -Werror=write-strings -Werror=address -Werror=int-to-pointer-cast -Werror=pointer-to-int-cast
 CC = arm-linux-gnueabi-gcc -std=gnu99
 CCDEPMODE = depmode=gcc3
-CFLAGS = -g -O2
+CFLAGS = -g
 CHANGELOG_CMD = (GIT_DIR=$(top_srcdir)/.git git log > $(top_srcdir)/.changelog.tmp && mv $(top_srcdir)/.changelog.tmp $(top_srcdir)/ChangeLog) || (rm -f $(top_srcdir)/.changelog.tmp; touch $(top_srcdir)/ChangeLog; echo 'git directory not found: installing possibly empty changelog.' >&2)
 CPP = arm-linux-gnueabi-gcc -std=gnu99 -E
 CPPFLAGS = 
@@ -291,7 +291,11 @@ fbdev_drv_la_SOURCES = \
          exa_acc.c \
          exa_dma_emu.c \
          exa_unused.c \
-         exa_null.c
+         exa_null.c \
+         exa_composite.c \
+         exa_upload_download.c \
+         exa_copy.c \
+         exa_copies.c
 
 all: all-am
 

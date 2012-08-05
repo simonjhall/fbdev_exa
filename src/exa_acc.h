@@ -14,14 +14,28 @@ struct DmaControlBlock
 	unsigned int m_blank1, m_blank2;
 };
 
-void CopyLinear(struct DmaControlBlock *pCB,
+//basic copies
+static void CopyLinear(struct DmaControlBlock *pCB,
 		void *pDestAddr, void *pSourceAddr, unsigned int length, unsigned int srcInc);
-void Copy2D(struct DmaControlBlock *pCB,
+static void Copy2D(struct DmaControlBlock *pCB,
 		void *pDestAddr, void *pSourceAddr, unsigned int xlength, unsigned int ylength,
 		unsigned int srcInc, unsigned int destStride, unsigned int sourceStride);
 
-struct DmaControlBlock *GetDmaBlock(void);
-unsigned char *GetSolidBuffer(unsigned int bytes);
+//proper copies
+void ForwardCopy(unsigned char *pDst, unsigned char *pSrc, int bytes);
+void ForwardCopyNoSrcInc(unsigned char *pDst, unsigned char *pSrc, int bytes);
+void Copy2D4kSrcInc(void *pDestAddr, void *pSourceAddr, unsigned int xlength, unsigned int ylength,
+		unsigned int destStride, unsigned int sourceStride);
+void Copy2D4kNoSrcInc(void *pDestAddr, void *pSourceAddr, unsigned int xlength, unsigned int ylength,
+		unsigned int destStride);
+
+struct DmaControlBlock *AllocDmaBlock(void);
+unsigned char *AllocSolidBuffer(unsigned int bytes);
+/*static inline struct DmaControlBlock *GetUnkickedDmaHead(void) { return g_pDmaBuffer + g_dmaUnkickedHead; };
+static inline void UpdateKickedDmaHead(void) {g_dmaUnkickedHead = g_dmaTail};*/
+struct DmaControlBlock *GetUnkickedDmaHead(void);
+void UpdateKickedDmaHead(void);
+BOOL IsPendingUnkicked(void);		//g_dmaUnkickedHead != g_dmaTail
 
 ////////////////////////////////////
 void *GetMemoryBase(void);
@@ -96,6 +110,14 @@ struct DmaPixmap
 	void *m_pData;
 };
 /////////////////////////////////////
+
+struct DmaControlBlock *GetBaseDmaBlock(void);
+void SetBaseDmaBlock(struct DmaControlBlock *);
+struct DmaControlBlock *GetDmaBlock(void);
+
+void ClearBytesPending(void);
+unsigned int GetBytesPending(void);
+void AddBytesPending(unsigned int);
 
 int RunDma(struct DmaControlBlock *);
 BOOL StartDma(struct DmaControlBlock *, BOOL force);
