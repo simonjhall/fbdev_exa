@@ -31,11 +31,10 @@ void Copy2D4kNoSrcInc(void *pDestAddr, void *pSourceAddr, unsigned int xlength, 
 
 struct DmaControlBlock *AllocDmaBlock(void);
 unsigned char *AllocSolidBuffer(unsigned int bytes);
-/*static inline struct DmaControlBlock *GetUnkickedDmaHead(void) { return g_pDmaBuffer + g_dmaUnkickedHead; };
-static inline void UpdateKickedDmaHead(void) {g_dmaUnkickedHead = g_dmaTail};*/
+
 struct DmaControlBlock *GetUnkickedDmaHead(void);
 void UpdateKickedDmaHead(void);
-BOOL IsPendingUnkicked(void);		//g_dmaUnkickedHead != g_dmaTail
+BOOL IsPendingUnkicked(void);
 
 ////////////////////////////////////
 void *GetMemoryBase(void);

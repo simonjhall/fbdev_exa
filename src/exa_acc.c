@@ -45,6 +45,39 @@ unsigned int g_actualStarts = 0;
 
 struct DmaControlBlock *g_pEmuCB = 0;
 
+BOOL IsPendingUnkicked(void)
+{
+	if (g_dmaUnkickedHead != g_dmaTail)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+void UpdateKickedDmaHead(void)
+{
+	g_dmaUnkickedHead = g_dmaTail;
+}
+
+struct DmaControlBlock *GetUnkickedDmaHead(void)
+{
+	return g_pDmaBuffer + g_dmaUnkickedHead;
+}
+
+void ClearBytesPending(void)
+{
+	g_bytesPending = 0;
+}
+
+unsigned int GetBytesPending(void)
+{
+	return g_bytesPending;
+}
+
+void AddBytesPending(unsigned int a)
+{
+	g_bytesPending += a;
+}
+
 /******* DMA ********/
 /**** starting ******/
 
@@ -133,7 +166,7 @@ inline void RealWaitDma(unsigned int bytesPending)
 	if(g_dmaPending)
 	{
 		MY_ASSERT(g_pEmuCB);
-		kern_dma_wait_all(g_bytesPending);
+		kern_dma_wait_all(GetBytesPending());
 		g_pEmuCB = 0;
 		g_actualWaits++;
 		ClearBytesPending();
@@ -174,12 +207,12 @@ struct DmaControlBlock *AllocDmaBlock(void)
 	}
 	else
 	{	//out of list space, kick the lot and start fresh
-		MY_ASSERT(g_dmaUnkickedHead != g_dmaTail || g_dmaPending == TRUE);
+		MY_ASSERT(IsPendingUnkicked() || g_dmaPending == TRUE);
 
-		if (g_dmaUnkickedHead != g_dmaTail)
+		if (IsPendingUnkicked())
 		{
-			if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE))
-				g_dmaUnkickedHead = g_dmaTail;
+			if (StartDma(GetUnkickedDmaHead(), TRUE))
+				UpdateKickedDmaHead();
 			else
 				MY_ASSERT(0);
 			//pending is true
@@ -266,10 +299,10 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 //	static int dmas = 0;
 	//int kick = RunDma(g_pDmaBuffer);
 //	int kick = StartDma(g_pDmaBuffer);
-	if (g_dmaUnkickedHead != g_dmaTail)
+	if (IsPendingUnkicked())
 	{
-		StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE);
-		g_dmaUnkickedHead = g_dmaTail;
+		StartDma(GetUnkickedDmaHead(), TRUE);
+		UpdateKickedDmaHead();
 	}
 
 	if (g_dmaPending)
@@ -366,10 +399,10 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 		fprintf(stderr, "unable to allocate solid space - kicking and waiting\n");
 
 		//there could be non-committed work taking up all the solid
-		if (g_dmaUnkickedHead != g_dmaTail)
+		if (IsPendingUnkicked())
 		{
-			if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, TRUE))	//force
-				g_dmaUnkickedHead = g_dmaTail;
+			if (StartDma(GetUnkickedDmaHead(), TRUE))	//force
+				UpdateKickedDmaHead();
 			else
 				MY_ASSERT(0);
 
@@ -434,13 +467,13 @@ void DoneSolid(PixmapPtr p)
 {
 	MY_ASSERT(g_solidDetails.m_pDst == p);
 
-	if (g_dmaUnkickedHead != g_dmaTail)
+	if (IsPendingUnkicked())
 	{
 		//give it a sync point (for future work)
 		exaMarkSync(g_solidDetails.m_pDst->drawable.pScreen);
 
-		if (StartDma(g_pDmaBuffer + g_dmaUnkickedHead, FALSE))
-			g_dmaUnkickedHead = g_dmaTail;
+		if (StartDma(GetUnkickedDmaHead(), FALSE))
+			UpdateKickedDmaHead();
 //		WaitMarker(0, 0);
 	}
 }
