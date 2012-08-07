@@ -39,6 +39,7 @@ BOOL IsPendingUnkicked(void);
 BOOL IsDmaPending(void);
 
 ////////////////////////////////////
+//driver exa functions
 void *GetMemoryBase(void);
 unsigned long GetMemorySize(void);
 
@@ -70,6 +71,7 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 		char *src, int src_pitch);
 
 ///////////////////
+//null versions of driver exa functions
 Bool NullPrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask, Pixel fg);
 void NullSolid(PixmapPtr pPixmap, int x1, int y1, int x2, int y2);
 void NullDoneSolid(PixmapPtr p);
@@ -87,7 +89,7 @@ Bool NullUploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 
 void NullWaitMarker(ScreenPtr pScreen, int Marker);
 ////////////////
-
+//not working exa stuff...
 
 Bool PrepareAccess(PixmapPtr pPix, int index);
 void FinishAccess(PixmapPtr pPix, int index);
@@ -110,20 +112,21 @@ struct DmaPixmap
 	int m_pitchBytes;
 	void *m_pData;
 };
+//end not working
 /////////////////////////////////////
 
-struct DmaControlBlock *GetBaseDmaBlock(void);
 void SetBaseDmaBlock(struct DmaControlBlock *);
-struct DmaControlBlock *GetDmaBlock(void);
+struct DmaControlBlock *GetBaseDmaBlock(void);
 
 void ClearBytesPending(void);
 unsigned int GetBytesPending(void);
 void AddBytesPending(unsigned int);
 
-int RunDma(struct DmaControlBlock *);
+//master dma control
 BOOL StartDma(struct DmaControlBlock *, BOOL force);
 BOOL WaitDma(BOOL force);
 
+//internal dma control
 int EmulateDma(struct DmaControlBlock *);
 void EmulateWaitDma(void);
 int RealDma(struct DmaControlBlock *);
@@ -131,8 +134,10 @@ void RealWaitDma(unsigned int);
 
 /////////////////////////////////////
 
+//allocation of kernel (un-pagable) memory
 void *kern_alloc(size_t);
 
+//internal kernel dma control
 int kern_dma_prepare(void *);
 int kern_dma_kick(void *);
 int kern_dma_prepare_kick_wait(void *);

@@ -129,7 +129,6 @@ void DoneCopy(PixmapPtr p)
 
 		if (StartDma(GetUnkickedDmaHead(), FALSE))
 			UpdateKickedDmaHead();
-//		WaitMarker(0, 0);
 	}
 }
 

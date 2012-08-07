@@ -60,7 +60,6 @@ Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 	g_solidDetails.m_pDst = pPixmap;
 	g_solidDetails.m_bpp = pPixmap->drawable.bitsPerPixel / 8;
 	g_solidDetails.m_toFill = fg;
-//	g_pSolidHead = g_pSolidTail = 0;
 
 	return TRUE;
 }
@@ -84,9 +83,6 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 	int height = Y2 - Y1;
 	//get a new dma block and some solid space
 	unsigned char *pSolid = 0;
-
-//	xf86DrvMsg(0, X_INFO, "Solid %p, pitch %ld, bpp %d colour %08x\n",
-//		pDst, dstPitch, g_solidDetails.m_bpp, g_solidDetails.m_toFill);
 
 	//get some solid space
 	while (!(pSolid = AllocSolidBuffer(32)))
@@ -169,6 +165,5 @@ void DoneSolid(PixmapPtr p)
 
 		if (StartDma(GetUnkickedDmaHead(), FALSE))
 			UpdateKickedDmaHead();
-//		WaitMarker(0, 0);
 	}
 }

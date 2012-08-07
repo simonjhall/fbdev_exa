@@ -31,23 +31,6 @@ static inline void Download(struct UpDownloadDetails *p)
 	int bpp = p->m_pPixmap->drawable.bitsPerPixel / 8;
 	unsigned long src_pitch = exaGetPixmapPitch(p->m_pPixmap);
 
-//	if (!src)
-//	{
-//		struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(p->m_pPixmap);
-//		MY_ASSERT(pInner);
-//
-//		src = pInner->m_pData;
-//		src_pitch = pInner->m_pitchBytes;
-//		bpp = pInner->m_bpp / 8;
-//	}
-
-//	xf86DrvMsg(0, X_INFO, "Download %p->%p, pitch %ld %d, bpp %d, from %d,%d size %dx%d\n",
-//			src, p->m_pImage,
-//			src_pitch, p->m_pitch,
-//			bpp,
-//			p->m_x, p->m_y,
-//			p->m_w, p->m_h);
-
 	Copy2D4kSrcInc(p->m_pImage,									//destination
 			&src[p->m_y * src_pitch + p->m_x * bpp], 			//source
 			p->m_w * bpp,										//x bytes to copy
@@ -62,23 +45,6 @@ static inline void Upload(struct UpDownloadDetails *p)
 	int bpp = p->m_pPixmap->drawable.bitsPerPixel / 8;
 	unsigned long dst_pitch = exaGetPixmapPitch(p->m_pPixmap);
 
-//	if (!dst)
-//	{
-//		struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(p->m_pPixmap);
-//		MY_ASSERT(pInner);
-//
-//		dst = pInner->m_pData;
-//		dst_pitch = pInner->m_pitchBytes;
-//		bpp = pInner->m_bpp / 8;
-//	}
-
-//	xf86DrvMsg(0, X_INFO, "Upload %p<-%p, pitch %ld %d, bpp %d, from %d,%d size %dx%d\n",
-//			dst, p->m_pImage,
-//			dst_pitch, p->m_pitch,
-//			bpp,
-//			p->m_x, p->m_y,
-//			p->m_w, p->m_h);
-
 	Copy2D4kSrcInc(&dst[p->m_y * dst_pitch + p->m_x * bpp],		//destination
 			p->m_pImage,							 			//source
 			p->m_w * bpp,										//x bytes to copy
@@ -91,12 +57,6 @@ Bool DownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 		char *dst, int dst_pitch)
 {
 //	xf86DrvMsg(0, X_DEFAULT, "%s %p->%p (%d, %d %dx%d)\n", __FUNCTION__, pSrc, dst, x, y, w, h);
-
-//	struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(pSrc);
-//	if (!pInner)
-//		return FALSE;
-//	if (!pInner->m_pData)
-		return FALSE;
 
 	g_upDownloadDetails.m_up = FALSE;
 	g_upDownloadDetails.m_pPixmap = pSrc;
@@ -113,7 +73,6 @@ Bool DownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 
 	if (StartDma(GetUnkickedDmaHead(), FALSE))
 		UpdateKickedDmaHead();
-//	WaitMarker(pSrc->drawable.pScreen, 0);
 
 	return TRUE;
 }
@@ -122,12 +81,6 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 		char *src, int src_pitch)
 {
 //	xf86DrvMsg(0, X_DEFAULT, "%s %p<-%p (%d,%d %dx%d)\n", __FUNCTION__, pDst, src, x, y, w, h);
-
-//	struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(pDst);
-//	if (!pInner)
-//		return FALSE;
-//	if (!pInner->m_pData)
-		return FALSE;
 
 	g_upDownloadDetails.m_up = TRUE;
 	g_upDownloadDetails.m_pPixmap = pDst;

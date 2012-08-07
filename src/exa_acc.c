@@ -81,17 +81,6 @@ BOOL IsDmaPending(void)
 /******* DMA ********/
 /**** starting ******/
 
-inline int RunDma(struct DmaControlBlock *pCB)
-{
-	MY_ASSERT(0);
-	if (pCB->m_pNext == (void *)0xcdcdcdcd)
-		return 0;
-	return EmulateDma(pCB);
-//	kern_dma_prepare(pCB);
-//	return kern_dma_prepare_kick_wait(pCB);
-//	return 0;
-}
-
 inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
 {
 	if (force)
@@ -105,8 +94,6 @@ inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
 		g_totalBytesPendingUnforced += GetBytesPending();
 	}
 
-//	MY_ASSERT(pCB->m_pNext != 0xcdcdcdcd)
-
 	if (WaitDma(force))
 	{
 		MY_ASSERT(IsDmaPending() == FALSE);
@@ -114,11 +101,8 @@ inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
 		g_dmaPending = TRUE;			//stuff's in the system and we need to ensure we don't overload our DMA controller
 		g_headOfDma = TRUE;				//allocations shouldn't patch up previous DMA CBs
 
-	//	return EmulateDma(pCB);
 		MY_ASSERT(g_pEmuCB == 0);
 		g_pEmuCB = pCB;
-//		kern_dma_prepare(pCB);
-//		return kern_dma_prepare_kick_wait(pCB);
 		kern_dma_prepare_kick(pCB);
 		g_actualStarts++;
 
@@ -137,7 +121,6 @@ inline BOOL WaitDma(BOOL force)
 		g_unforcedWaits++;
 
 	if (force || (GetBytesPending() >= 8192))
-//	if (1)
 	{
 		RealWaitDma(GetBytesPending());
 //		EmulateWaitDma();
@@ -255,11 +238,6 @@ void ResetSolidBuffer(void)
 	g_solidOffset = 0;
 }
 
-/******** COPIES *********/
-
-
-
-
 /******** EXA ********/
 
 static CARD8 *g_pOffscreenBase;
@@ -291,14 +269,11 @@ unsigned long GetMemorySize(void)
 int MarkSync(ScreenPtr pScreen)
 {
 	static int marker = 0;
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p %d\n", __FUNCTION__, pScreen, marker);
 	return marker++;
 }
 
 void WaitMarker(ScreenPtr pScreen, int Marker)
 {
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p %d\n", __FUNCTION__, pScreen, Marker);
-
 	time_t start = clock();
 
 //	static int dmas = 0;
@@ -320,8 +295,6 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 	g_dmaTail = 0;			//write into CB 0
 	g_dmaUnkickedHead = 0;	//and the head of any work starts again at zero
 	g_headOfDma = TRUE;			//patch up -1 CB next pointers
-//	memset(g_pDmaBuffer, 0xcd, 32);
-//	memset(g_pDmaBuffer, 0xcd, 4096 * 50);
 
 	static unsigned int last_starts = 0;
 	if (g_actualStarts - last_starts > 1000)
@@ -332,6 +305,4 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 				g_totalBytesPendingForced / g_forcedStarts, g_totalBytesPendingUnforced / g_unforcedStarts);
 	}
 }
-
-
 
