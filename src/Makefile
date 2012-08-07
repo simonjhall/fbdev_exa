@@ -94,7 +94,7 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(fbdev_drv_ladir)"
 LTLIBRARIES = $(fbdev_drv_la_LTLIBRARIES)
 fbdev_drv_la_LIBADD =
-am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo exa_dma_emu.lo exa_unused.lo exa_null.lo exa_composite.lo exa_upload_download.lo exa_copy.lo exa_copies.lo
+am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo exa_dma_emu.lo exa_unused.lo exa_null.lo exa_composite.lo exa_upload_download.lo exa_copy.lo exa_copies.lo exa_solid.lo
 fbdev_drv_la_OBJECTS = $(am_fbdev_drv_la_OBJECTS)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -295,7 +295,8 @@ fbdev_drv_la_SOURCES = \
          exa_composite.c \
          exa_upload_download.c \
          exa_copy.c \
-         exa_copies.c
+         exa_copies.c \
+         exa_solid.c
 
 all: all-am
 
