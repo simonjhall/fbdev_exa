@@ -53,3 +53,26 @@ Bool NullUploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 void NullWaitMarker(ScreenPtr pScreen, int Marker)
 {
 }
+
+Bool NullCheckComposite(int op, PicturePtr pSrcPicture,
+		PicturePtr pMaskPicture, PicturePtr pDstPicture)
+{
+	return TRUE;
+}
+
+Bool NullPrepareComposite(int op, PicturePtr pSrcPicture,
+		PicturePtr pMaskPicture, PicturePtr pDstPicture, PixmapPtr pSrc,
+		PixmapPtr pMask, PixmapPtr pDst)
+{
+	return TRUE;
+}
+
+void NullComposite(PixmapPtr pDst, int srcX, int srcY, int maskX,
+		int maskY, int dstX, int dstY, int width, int height)
+{
+}
+
+void NullDoneComposite(PixmapPtr p)
+{
+}
+

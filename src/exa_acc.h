@@ -87,6 +87,15 @@ Bool NullDownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 Bool NullUploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 		char *src, int src_pitch);
 
+Bool NullCheckComposite(int op, PicturePtr pSrcPicture,
+		PicturePtr pMaskPicture, PicturePtr pDstPicture);
+Bool NullPrepareComposite(int op, PicturePtr pSrcPicture,
+		PicturePtr pMaskPicture, PicturePtr pDstPicture, PixmapPtr pSrc,
+		PixmapPtr pMask, PixmapPtr pDst);
+void NullComposite(PixmapPtr pDst, int srcX, int srcY, int maskX,
+		int maskY, int dstX, int dstY, int width, int height);
+void NullDoneComposite(PixmapPtr p);
+
 void NullWaitMarker(ScreenPtr pScreen, int Marker);
 ////////////////
 //not working exa stuff...

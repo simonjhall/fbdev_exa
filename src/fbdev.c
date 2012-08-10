@@ -24,6 +24,8 @@
 #include "exa.h"
 #include "exa_acc.h"
 
+//#define NULL_DRIVER
+
 /* for visuals */
 #include "fb.h"
 
@@ -250,12 +252,13 @@ static Bool FBDevPciProbe(DriverPtr drv, int entity_num,
     pScrn = xf86ConfigPciEntity(NULL, 0, entity_num, NULL, NULL,
 				NULL, NULL, NULL, NULL);
     if (pScrn) {
-	char *device;
+	const char *device;
 	GDevPtr devSection = xf86GetDevFromEntity(pScrn->entityList[0],
 						  pScrn->entityInstanceList[0]);
 
 	device = xf86FindOptionValue(devSection->options, "fbdev");
-	if (fbdevHWProbe(NULL, device, NULL)) {
+	//sjh seriously, make your mind up about const
+	if (fbdevHWProbe(NULL, (char *)device, NULL)) {
 	    pScrn->driverVersion = FBDEV_VERSION;
 	    pScrn->driverName    = FBDEV_DRIVER_NAME;
 	    pScrn->name          = FBDEV_NAME;
@@ -294,7 +297,7 @@ FBDevProbe(DriverPtr drv, int flags)
 #ifndef XSERVER_LIBPCIACCESS
 	int bus,device,func;
 #endif
-	char *dev;
+	const char *dev;
 	Bool foundScreen = FALSE;
 
 	TRACE("probe start");
@@ -331,7 +334,8 @@ FBDevProbe(DriverPtr drv, int flags)
 		    0;
 		  
 	    }
-	    if (fbdevHWProbe(NULL,dev,NULL)) {
+	    //sjh wish I'd never fixed that const warning...
+	    if (fbdevHWProbe(NULL, (char *)dev,NULL)) {
 		pScrn = NULL;
 		if (isPci) {
 #ifndef XSERVER_LIBPCIACCESS
@@ -431,7 +435,8 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 	}
 #endif
 	/* open device */
-	if (!fbdevHWInit(pScrn,NULL,xf86FindOptionValue(fPtr->pEnt->device->options,"fbdev")))
+	//sjh arbitary cast
+	if (!fbdevHWInit(pScrn,NULL,(char *)xf86FindOptionValue(fPtr->pEnt->device->options,"fbdev")))
 		return FALSE;
 	default_depth = fbdevHWGetDepth(pScrn,&fbbpp);
 	if (!xf86SetDepthBpp(pScrn, default_depth, default_depth, fbbpp,
@@ -880,6 +885,25 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 		pExa->maxX = 2048;
 		pExa->maxY = 2048;
 
+#ifdef NULL_DRIVER
+		pExa->WaitMarker = NullWaitMarker;
+
+		pExa->PrepareSolid = NullPrepareSolid;
+		pExa->Solid = NullSolid;
+		pExa->DoneSolid = NullDoneSolid;
+
+		pExa->PrepareCopy = NullPrepareCopy;
+		pExa->Copy = NullCopy;
+		pExa->DoneCopy = NullDoneCopy;
+
+		pExa->DownloadFromScreen = NullDownloadFromScreen;
+		pExa->UploadToScreen = NullUploadToScreen;
+
+		pExa->CheckComposite = NullCheckComposite;
+		pExa->PrepareComposite = NullPrepareComposite;
+		pExa->Composite = NullComposite;
+		pExa->DoneComposite = NullDoneComposite;
+#else
 		pExa->WaitMarker = WaitMarker;
 //		pExa->MarkSync = MarkSync;
 
@@ -906,6 +930,7 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 //		pExa->PrepareComposite = PrepareComposite;
 //		pExa->Composite = Composite;
 //		pExa->DoneComposite = DoneComposite;
+#endif
 
 		pExa->exa_major = 2;
 		pExa->exa_minor = 5;
