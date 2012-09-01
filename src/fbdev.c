@@ -876,7 +876,7 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 		if (!(pExa = exaDriverAlloc()))
 			return FALSE;
 
-		pExa->flags = EXA_OFFSCREEN_PIXMAPS /*| EXA_HANDLES_PIXMAPS | EXA_SUPPORTS_PREPARE_AUX*/;
+		pExa->flags = 0 | EXA_OFFSCREEN_PIXMAPS /*| EXA_HANDLES_PIXMAPS | EXA_SUPPORTS_PREPARE_AUX*/;
 		pExa->memoryBase = GetMemoryBase();
 		pExa->memorySize = GetMemorySize();
 		pExa->offScreenBase = 0;
@@ -926,10 +926,10 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 		pExa->DownloadFromScreen = DownloadFromScreen;
 		pExa->UploadToScreen = UploadToScreen;
 
-//		pExa->CheckComposite = CheckComposite;
-//		pExa->PrepareComposite = PrepareComposite;
-//		pExa->Composite = Composite;
-//		pExa->DoneComposite = DoneComposite;
+		pExa->CheckComposite = CheckComposite;
+		pExa->PrepareComposite = PrepareComposite;
+		pExa->Composite = Composite;
+		pExa->DoneComposite = DoneComposite;
 #endif
 
 		pExa->exa_major = 2;
@@ -937,6 +937,8 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 
 		if (exaDriverInit(pScreen, pExa) == FALSE)
 			return FALSE;
+
+		SetScreen(pScreen);
 	}
 	/***************************/
 

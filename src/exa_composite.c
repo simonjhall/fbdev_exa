@@ -132,7 +132,7 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 //			maskX, maskY,
 //			dstX, dstY);
 
-	WaitMarker(0, 0);
+	exaWaitSync(pDst->drawable.pScreen);
 
 	int y, x;
 	unsigned long dest_stride = exaGetPixmapPitch(pDst);

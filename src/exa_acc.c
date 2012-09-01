@@ -14,6 +14,7 @@
 
 /******** GENERIC STUFF ******/
 
+ScreenPtr g_pScreen = 0;
 
 struct DmaControlBlock *g_pDmaBuffer = 0;	//all dma control blocks
 unsigned int g_dmaUnkickedHead = 0;		//first unkicked control block (potentially pointing to unused entry)
@@ -201,7 +202,7 @@ struct DmaControlBlock *AllocDmaBlock(void)
 			//pending is true
 		}
 
-		WaitMarker(0, 0);
+		exaWaitSync(GetScreen());
 		//head will be reset, but we need to clear it before the return
 		g_headOfDma = FALSE;
 		MY_ASSERT(g_dmaTail == 0);
@@ -236,6 +237,17 @@ unsigned char *AllocSolidBuffer(unsigned int bytes)
 void ResetSolidBuffer(void)
 {
 	g_solidOffset = 0;
+}
+
+inline ScreenPtr GetScreen(void)
+{
+	MY_ASSERT(g_pScreen);
+	return g_pScreen;
+}
+
+void SetScreen(ScreenPtr p)
+{
+	g_pScreen = p;
 }
 
 /******** EXA ********/

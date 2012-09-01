@@ -102,7 +102,7 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 
 		//it could be something already enqueued taking it
 		if (IsDmaPending())
-			WaitMarker(g_solidDetails.m_pDst->drawable.pScreen, 0);
+			exaWaitSync(g_solidDetails.m_pDst->drawable.pScreen);
 
 		//or simply we simply haven't reset it yet after past work
 		ResetSolidBuffer();

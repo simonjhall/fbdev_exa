@@ -42,6 +42,8 @@ BOOL IsDmaPending(void);
 //driver exa functions
 void *GetMemoryBase(void);
 unsigned long GetMemorySize(void);
+ScreenPtr GetScreen(void);
+void SetScreen(ScreenPtr);
 
 int MarkSync(ScreenPtr pScreen);
 void WaitMarker(ScreenPtr pScreen, int Marker);

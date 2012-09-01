@@ -98,7 +98,7 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 	if (StartDma(GetUnkickedDmaHead(), TRUE))
 		UpdateKickedDmaHead();
 
-	WaitMarker(pDst->drawable.pScreen, 0);			//seems be necessary
+	exaWaitSync(pDst->drawable.pScreen);			//seems be necessary
 
 	return TRUE;
 }
