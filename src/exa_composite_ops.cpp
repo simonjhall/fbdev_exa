@@ -20,15 +20,32 @@ public:
 	}
 };
 
-///////////////////////
-class ZeroSourceCoord
+/////////////////////////////////////
+
+template <typename Derived>
+class Coord
 {
 public:
-	inline int GetX(int) const { return 0; };
-	inline int GetY(int) const { return 0; };
+	inline int GetX(int x) const
+	{
+		return static_cast<const Derived *>(this)->GetX_(x);
+	};
+
+	inline int GetY(int y) const
+	{
+		return static_cast<const Derived *>(this)->GetY_(y);
+	}
 };
 
-class ClampedSourceCoord
+/////////////////////////////////////
+class ZeroSourceCoord : public Coord<ZeroSourceCoord>
+{
+public:
+	inline int GetX_(int) const { return 0; };
+	inline int GetY_(int) const { return 0; };
+};
+
+class ClampedSourceCoord : public Coord<ClampedSourceCoord>
 {
 public:
 	inline ClampedSourceCoord(int width, int height)
@@ -37,12 +54,12 @@ public:
 	{
 	}
 
-	inline int GetX(int x) const
+	inline int GetX_(int x) const
 	{
 		return Clamp(x, m_width);
 	};
 
-	inline int GetY(int y) const
+	inline int GetY_(int y) const
 	{
 		return Clamp(y, m_height);
 	};
@@ -59,18 +76,28 @@ private:
 	int m_height;
 };
 
-class NormalSourceCoord
+class NormalSourceCoord : public Coord<NormalSourceCoord>
 {
 public:
 	inline NormalSourceCoord() {};
-	inline int GetX(int x) const { return x; };
-	inline int GetY(int y) const { return y; };
+	inline int GetX_(int x) const { return x; };
+	inline int GetY_(int y) const { return y; };
+};
+/////////////////////////////////////
+template <class T, typename Derived>
+class Value
+{
+public:
+	template <class U = NormalSourceCoord>
+	inline T GetValue(int x, int y, int offset, const U &coord = NormalSourceCoord()) const
+	{
+		return static_cast<const Derived *>(this)->GetValue_(x, y, offset, coord);
+	}
 };
 /////////////////////////////////////
 
-/////////////////////////////////////
-template <class T, int channels, int bpp, T alpha>
-class VaryingValue
+template <class T, int channels, int bpp, T alpha, int fixed_channel = -1>
+class VaryingValue : public Value<T, VaryingValue<T, channels, bpp, alpha> >
 {
 public:
 	inline VaryingValue(T * const __restrict p, int offX, int offY, int stride)
@@ -82,10 +109,13 @@ public:
 	}
 
 	template <class U = NormalSourceCoord>
-	inline T GetValue(int x, int y, int offset, const U &coord = NormalSourceCoord()) const
+	inline T GetValue_(int x, int y, int offset, const U &coord = NormalSourceCoord()) const
 	{
 		x = coord.GetX(x);
 		y = coord.GetY(y);
+
+		if (fixed_channel != -1)
+			offset = fixed_channel;
 
 		if (offset * 8 >= bpp)
 			return alpha;
@@ -112,7 +142,7 @@ private:
 
 
 template <class T, int channels>
-class FixedValue
+class FixedValue : public Value<T, FixedValue<T, channels> >
 {
 public:
 	inline FixedValue(T *a)
@@ -122,7 +152,7 @@ public:
 	}
 
 	template <class U = NormalSourceCoord>
-	inline T GetValue(int, int, int offset, const U &coord = NormalSourceCoord()) const
+	inline T GetValue_(int, int, int offset, const U &coord = NormalSourceCoord()) const
 	{
 		return m_values[offset];
 	}
@@ -149,8 +179,8 @@ void Over(const Source &source, Dest &dest, const Mask &mask, const SourceCoord 
 {
 	T mask_pixel = mask.GetValue(x, y, mask_channel);
 
-	if (mask_pixel == 0)
-		return;
+//	if (mask_pixel == 0)
+//		return;
 
 	T source_r = source.GetValue(x, y, 0, coord);
 	T source_g = source.GetValue(x, y, 1, coord);
@@ -162,7 +192,7 @@ void Over(const Source &source, Dest &dest, const Mask &mask, const SourceCoord 
 	T dest_b = dest.GetValue(x, y, 2);
 	T dest_a = dest.GetValue(x, y, 3);
 
-	if (mask_pixel != max)
+//	if (mask_pixel != max)
 	{
 		source_r = InOp<T, U, scale>::Op(source_r, mask_pixel);
 		source_g = InOp<T, U, scale>::Op(source_g, mask_pixel);
@@ -188,17 +218,33 @@ extern "C" void Over(CompositeOp *pOp,
 {
 	VaryingValue<unsigned char, 4, 32, 255> source(pSource, pOp->srcX, pOp->srcY, source_stride);
 	VaryingValue<unsigned char, 4, 32, 255> dest(pDest, pOp->dstX, pOp->dstY, dest_stride);
-	VaryingValue<unsigned char, 4, 32, 255> mask(pMask, pOp->maskX, pOp->maskY, mask_stride);
-//	unsigned char m = 255;
-//	FixedValue<unsigned char, 1> mask(&m);
 
+	unsigned char m = 255;
 
-	const NormalSourceCoord normal;
-//	const ClampedSourceCoord clamp(source_width, source_height);
+	if (pMask)
+	{
+		VaryingValue<unsigned char, 4, 32, 255> mask(pMask, pOp->maskX, pOp->maskY, mask_stride);
 
-	for (int x = 0; x < pOp->width; x++)
-		for (int y = 0; y < pOp->height; y++)
-			Over<unsigned char, unsigned short, 256, 255,
-				0>
-				(source, dest, mask, normal, x, y);
+	//	const ClampedSourceCoord clamp(source_width, source_height);
+		const NormalSourceCoord normal;
+
+		for (int x = 0; x < pOp->width; x++)
+			for (int y = 0; y < pOp->height; y++)
+				Over<unsigned char, unsigned short, 256, 255,
+					3>
+					(source, dest, mask, normal, x, y);
+	}
+	else
+	{
+		FixedValue<unsigned char, 1> mask(&m);
+
+	//	const ClampedSourceCoord clamp(source_width, source_height);
+		const NormalSourceCoord normal;
+
+		for (int x = 0; x < pOp->width; x++)
+			for (int y = 0; y < pOp->height; y++)
+				Over<unsigned char, unsigned short, 256, 255,
+					3>
+					(source, dest, mask, normal, x, y);
+	}
 }
