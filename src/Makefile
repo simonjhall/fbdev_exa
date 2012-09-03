@@ -94,7 +94,7 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(fbdev_drv_ladir)"
 LTLIBRARIES = $(fbdev_drv_la_LTLIBRARIES)
 fbdev_drv_la_LIBADD =
-am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo exa_dma_emu.lo exa_unused.lo exa_null.lo exa_composite.lo exa_upload_download.lo exa_copy.lo exa_copies.lo exa_solid.lo
+am_fbdev_drv_la_OBJECTS = fbdev.lo exa_acc.lo exa_dma_emu.lo exa_unused.lo exa_null.lo exa_composite.lo exa_upload_download.lo exa_copy.lo exa_copies.lo exa_solid.lo exa_composite_ops.lo
 fbdev_drv_la_OBJECTS = $(am_fbdev_drv_la_OBJECTS)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -106,6 +106,17 @@ DEFAULT_INCLUDES = -I. -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 am__mv = mv -f
+
+CPPASCOMPILE = $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
+	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CCASFLAGS) $(CCASFLAGS)
+LTCPPASCOMPILE = $(LIBTOOL) $(AM_V_lt) $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=compile $(CCAS) $(DEFS) \
+	$(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) \
+	$(AM_CCASFLAGS) $(CCASFLAGS)
+AM_V_CPPAS = $(am__v_CPPAS_$(V))
+am__v_CPPAS_ = $(am__v_CPPAS_$(AM_DEFAULT_VERBOSITY))
+am__v_CPPAS_0 = @echo "  CPPAS " $@;
+
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 LTCOMPILE = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -147,6 +158,7 @@ AUTOMAKE = ${SHELL} /home/simon/Desktop/x/src/driver/xf86-video-fbdev/missing --
 AWK = mawk
 BASE_CFLAGS =  -Wall -Wpointer-arith -Wmissing-declarations -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Wnested-externs -Wbad-function-cast -Wold-style-definition -Wdeclaration-after-statement -Wunused -Wuninitialized -Wshadow -Wcast-qual -Wmissing-noreturn -Wmissing-format-attribute -Wredundant-decls -Werror=implicit -Werror=nonnull -Werror=init-self -Werror=main -Werror=missing-braces -Werror=sequence-point -Werror=return-type -Werror=trigraphs -Werror=array-bounds -Werror=write-strings -Werror=address -Werror=int-to-pointer-cast -Werror=pointer-to-int-cast
 CC = arm-linux-gnueabi-gcc -std=gnu99
+CCAS = arm-linux-gnueabi-gcc -std=gnu99 -march=armv6
 CCDEPMODE = depmode=gcc3
 CFLAGS = -g -O3 -march=armv6 -marm
 CHANGELOG_CMD = (GIT_DIR=$(top_srcdir)/.git git log > $(top_srcdir)/.changelog.tmp && mv $(top_srcdir)/.changelog.tmp $(top_srcdir)/ChangeLog) || (rm -f $(top_srcdir)/.changelog.tmp; touch $(top_srcdir)/ChangeLog; echo 'git directory not found: installing possibly empty changelog.' >&2)
@@ -296,12 +308,16 @@ fbdev_drv_la_SOURCES = \
          exa_upload_download.c \
          exa_copy.c \
          exa_copies.c \
-         exa_solid.c
+         exa_solid.c \
+         exa_composite_ops.S \
 
 all: all-am
 
+exa_composite_ops.S: exa_composite_ops.cpp
+	clang++ -S exa_composite_ops.cpp -o exa_composite_ops.S -march=armv6 -O3 -mtune=arm1176 -std=c++11
+
 .SUFFIXES:
-.SUFFIXES: .c .lo .o .obj
+.SUFFIXES: .s .c .lo .o .obj .S
 $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -373,6 +389,27 @@ distclean-compile:
 	-rm -f *.tab.c
 
 include ./$(DEPDIR)/fbdev.Plo
+
+.S.o:
+	$(AM_V_CPPAS)$(CPPASCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
+	$(AM_V_at)$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+#	$(AM_V_CPPAS)source='$<' object='$@' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCASDEPMODE) $(depcomp) \
+#	$(AM_V_CPPAS_no)$(CPPASCOMPILE) -c -o $@ $<
+
+.S.obj:
+	$(AM_V_CPPAS)$(CPPASCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ `$(CYGPATH_W) '$<'`
+	$(AM_V_at)$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+#	$(AM_V_CPPAS)source='$<' object='$@' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCASDEPMODE) $(depcomp) \
+#	$(AM_V_CPPAS_no)$(CPPASCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
+
+.S.lo:
+	$(AM_V_CPPAS)$(LTCPPASCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
+	$(AM_V_at)$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Plo
+#	$(AM_V_CPPAS)source='$<' object='$@' libtool=yes \
+#	DEPDIR=$(DEPDIR) $(CCASDEPMODE) $(depcomp) \
+#	$(AM_V_CPPAS_no)$(LTCPPASCOMPILE) -c -o $@ $<
 
 .c.o:
 	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<

@@ -3,16 +3,7 @@
 
 ////////////////////////////////////
 
-struct DmaControlBlock
-{
-	unsigned int m_transferInfo;
-	void *m_pSourceAddr;
-	void *m_pDestAddr;
-	unsigned int m_xferLen;
-	unsigned int m_tdStride;
-	struct DmaControlBlock *m_pNext;
-	unsigned int m_blank1, m_blank2;
-};
+#include "generic_types.h"
 
 //basic copies
 static void CopyLinear(struct DmaControlBlock *pCB,
@@ -161,6 +152,5 @@ int kern_dma_wait_all(unsigned int bytesPending);
 #define DEREFERENCE_TEST
 #define STRADDLE_TEST
 #define BREAK_PAGES
-
 
 #endif
