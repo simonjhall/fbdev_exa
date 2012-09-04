@@ -162,64 +162,64 @@ private:
 };
 /////////////////////////////////////
 
-
-template <
-	class T, class U, U scale, T max,
-	const int mask_channel,
-	class Source, class Dest, class Mask, class SourceCoord>
-inline void Over(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
-		int x, int y) __attribute__((always_inline));
-
-template <
-	class T, class U, U scale, T max,
-	const int mask_channel,
-	class Source, class Dest, class Mask, class SourceCoord>
-void Over(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
-		int x, int y)
+class PDOver
 {
-	T mask_pixel = mask.GetValue(x, y, mask_channel);
-
-//	if (mask_pixel == 0)
-//		return;
-
-	T source_r = source.GetValue(x, y, 0, coord);
-	T source_g = source.GetValue(x, y, 1, coord);
-	T source_b = source.GetValue(x, y, 2, coord);
-	T source_a = source.GetValue(x, y, 3, coord);
-
-	T dest_r = dest.GetValue(x, y, 0);
-	T dest_g = dest.GetValue(x, y, 1);
-	T dest_b = dest.GetValue(x, y, 2);
-	T dest_a = dest.GetValue(x, y, 3);
-
-//	if (mask_pixel != max)
+public:
+	template <
+		class T, class U, U scale, T max,
+		const int mask_channel,
+		class Source, class Dest, class Mask, class SourceCoord>
+	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
+			const int width, const int height)
 	{
-		source_r = InOp<T, U, scale>::Op(source_r, mask_pixel);
-		source_g = InOp<T, U, scale>::Op(source_g, mask_pixel);
-		source_b = InOp<T, U, scale>::Op(source_b, mask_pixel);
-//		T temp_a = InOp<T, U, scale>::Op(source_a, mask_pixel);
+		for (int y = 0; y < height; y++)
+			for (int x = 0; x < width; x++)
+			{
+				T mask_pixel = mask.GetValue(x, y, mask_channel);
+
+	//			if (mask_pixel == 0)
+	//				return;
+
+				T source_r = source.GetValue(x, y, 0, coord);
+				T source_g = source.GetValue(x, y, 1, coord);
+				T source_b = source.GetValue(x, y, 2, coord);
+				T source_a = source.GetValue(x, y, 3, coord);
+
+				T dest_r = dest.GetValue(x, y, 0);
+				T dest_g = dest.GetValue(x, y, 1);
+				T dest_b = dest.GetValue(x, y, 2);
+				T dest_a = dest.GetValue(x, y, 3);
+
+	//			if (mask_pixel != max)
+				{
+					source_r = InOp<T, U, scale>::Op(source_r, mask_pixel);
+					source_g = InOp<T, U, scale>::Op(source_g, mask_pixel);
+					source_b = InOp<T, U, scale>::Op(source_b, mask_pixel);
+	//				T temp_a = InOp<T, U, scale>::Op(source_a, mask_pixel);
+				}
+
+				T final_r = OverOp<T, U, scale>::Op(source_r, dest_r, max - source_a);
+				T final_g = OverOp<T, U, scale>::Op(source_g, dest_g, max - source_a);
+				T final_b = OverOp<T, U, scale>::Op(source_b, dest_b, max - source_a);
+				T final_a = OverOp<T, U, scale>::Op(source_a, dest_a, max - source_a);
+
+				dest.SetValue(x, y, 0, final_r);
+				dest.SetValue(x, y, 1, final_g);
+				dest.SetValue(x, y, 2, final_b);
+				dest.SetValue(x, y, 3, final_a);
+			}
 	}
+};
 
-	T final_r = OverOp<T, U, scale>::Op(source_r, dest_r, max - source_a);
-	T final_g = OverOp<T, U, scale>::Op(source_g, dest_g, max - source_a);
-	T final_b = OverOp<T, U, scale>::Op(source_b, dest_b, max - source_a);
-	T final_a = OverOp<T, U, scale>::Op(source_a, dest_a, max - source_a);
 
-	dest.SetValue(x, y, 0, final_r);
-	dest.SetValue(x, y, 1, final_g);
-	dest.SetValue(x, y, 2, final_b);
-	dest.SetValue(x, y, 3, final_a);
-}
-
-extern "C" void Over(CompositeOp *pOp,
+template <class Operation>
+inline void Op(CompositeOp *pOp,
 		unsigned char *pSource, unsigned char *pDest, unsigned char *pMask,
 		int source_stride, int dest_stride, int mask_stride,
 		int source_width, int source_height)
 {
 	VaryingValue<unsigned char, 4, 32, 255> source(pSource, pOp->srcX, pOp->srcY, source_stride);
 	VaryingValue<unsigned char, 4, 32, 255> dest(pDest, pOp->dstX, pOp->dstY, dest_stride);
-
-	unsigned char m = 255;
 
 	if (pMask)
 	{
@@ -228,23 +228,24 @@ extern "C" void Over(CompositeOp *pOp,
 	//	const ClampedSourceCoord clamp(source_width, source_height);
 		const NormalSourceCoord normal;
 
-		for (int x = 0; x < pOp->width; x++)
-			for (int y = 0; y < pOp->height; y++)
-				Over<unsigned char, unsigned short, 256, 255,
-					3>
-					(source, dest, mask, normal, x, y);
+		Operation::template Op<unsigned char, unsigned short, 256, 255, 3>
+			(source, dest, mask, normal, pOp->width, pOp->height);
 	}
 	else
 	{
+		unsigned char m = 255;
 		FixedValue<unsigned char, 1> mask(&m);
 
 	//	const ClampedSourceCoord clamp(source_width, source_height);
 		const NormalSourceCoord normal;
 
-		for (int x = 0; x < pOp->width; x++)
-			for (int y = 0; y < pOp->height; y++)
-				Over<unsigned char, unsigned short, 256, 255,
-					3>
-					(source, dest, mask, normal, x, y);
+		Operation::template Op<unsigned char, unsigned short, 256, 255, 3>
+			(source, dest, mask, normal, pOp->width, pOp->height);
 	}
+}
+
+
+extern "C" ptr2PdFunc EnumToFunc(const PorterDuffOp op)
+{
+	return &Op<PDOver>;
 }

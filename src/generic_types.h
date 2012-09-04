@@ -1,5 +1,5 @@
 #ifndef _GENERIC_TYPES_H_
-#define _GENERIC_TYPES_H_
+#define GENERIC_TYPES_H_
 
 //must match the structure expected by the hardware
 struct DmaControlBlock
@@ -27,5 +27,30 @@ struct CompositeOp
 	int width;
 	int height;
 };
+
+enum PorterDuffOp
+{
+	kPictOpMinimum = 0,
+	kPictOpClear = 0,
+	kPictOpSrc = 1,
+	kPictOpDst = 2,
+	kPictOpOver = 3,
+	kPictOpOverReverse = 4,
+	kPictOpIn = 5,
+	kPictOpInReverse = 6,
+	kPictOpOut = 7,
+	kPictOpOutReverse = 8,
+	kPictOpAtop = 9,
+	kPictOpAtopReverse = 10,
+	kPictOpXor = 11,
+	kPictOpAdd = 12,
+	kPictOpSaturate = 13,
+	kPictOpMaximum = 13,
+};
+
+typedef void(*ptr2PdFunc)(struct CompositeOp *,
+		unsigned char *, unsigned char *, unsigned char *,
+		int, int, int,
+		int, int);
 
 #endif
