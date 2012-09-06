@@ -1,6 +1,9 @@
 #ifndef _GENERIC_TYPES_H_
 #define GENERIC_TYPES_H_
 
+#define MY_ASSERT(x) if (!(x)) *(int *)0 = 0;
+//#define MY_ASSERT(x) ;
+
 //must match the structure expected by the hardware
 struct DmaControlBlock
 {
@@ -28,6 +31,7 @@ struct CompositeOp
 	int height;
 };
 
+//list of things we might want to do
 enum PorterDuffOp
 {
 	kPictOpMinimum = 0,
@@ -48,9 +52,24 @@ enum PorterDuffOp
 	kPictOpMaximum = 13,
 };
 
-typedef void(*ptr2PdFunc)(struct CompositeOp *,
-		unsigned char *, unsigned char *, unsigned char *,
-		int, int, int,
-		int, int);
+//function pointer for the thing that'll do our work
+typedef void(*ptr2PdFunc)(struct CompositeOp *pOp,
+		unsigned char *pSource, unsigned char *pDest, unsigned char *pMask,
+		int source_stride, int dest_stride, int mask_stride,
+		int source_width, int source_height,
+		int source_wrap);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+//translates from operation to function pointer
+ptr2PdFunc EnumToFunc(const enum PorterDuffOp op,
+		int source_bpp, int dest_bpp,
+		int mask_bpp);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
