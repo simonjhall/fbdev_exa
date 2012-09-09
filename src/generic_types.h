@@ -1,7 +1,11 @@
 #ifndef _GENERIC_TYPES_H_
 #define GENERIC_TYPES_H_
 
+#ifdef __llvm__
+#define MY_ASSERT(x) if (!(x)) __builtin_trap();
+#else
 #define MY_ASSERT(x) if (!(x)) *(int *)0 = 0;
+#endif
 //#define MY_ASSERT(x) ;
 
 //must match the structure expected by the hardware
@@ -52,8 +56,18 @@ enum PorterDuffOp
 	kPictOpMaximum = 13,
 };
 
+enum PixelFormat
+{
+	kNoData,
+	kA8 = 0x8018000,
+	kA8R8G8B8 = 0x20028888,			//argb
+	kX8R8G8B8 = 0x20020888,			//xrgb
+	kA8B8G8R8 = 0x20038888,			//abgr
+	kX8B8G8R8 = 0x20030888,			//xbgr
+};
+
 //function pointer for the thing that'll do our work
-typedef void(*ptr2PdFunc)(struct CompositeOp *pOp,
+typedef void(*ptr2PdFunc)(struct CompositeOp *pOp, int numOps,
 		unsigned char *pSource, unsigned char *pDest, unsigned char *pMask,
 		int source_stride, int dest_stride, int mask_stride,
 		int source_width, int source_height,
@@ -65,8 +79,7 @@ extern "C" {
 
 //translates from operation to function pointer
 ptr2PdFunc EnumToFunc(const enum PorterDuffOp op,
-		int source_bpp, int dest_bpp,
-		int mask_bpp);
+		enum PixelFormat source_pf, enum PixelFormat dest_pf, enum PixelFormat mask_pf);
 
 #ifdef __cplusplus
 }

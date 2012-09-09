@@ -313,8 +313,8 @@ fbdev_drv_la_SOURCES = \
 
 all: all-am
 
-exa_composite_ops.S: exa_composite_ops.cpp
-	clang++ -S exa_composite_ops.cpp -o exa_composite_ops.S -march=armv6 -O3 -mtune=arm1176 -std=c++11
+exa_composite_ops.S: composite_ops.inl composite_instantiation.cpp
+	time clang++ -S composite_instantiation.cpp -o exa_composite_ops.S -march=armv6 -O3 -mtune=arm1176 -std=c++11 -g
 
 .SUFFIXES:
 .SUFFIXES: .s .c .lo .o .obj .S
