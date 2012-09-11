@@ -1,14 +1,5 @@
 #include "generic_types.h"
 
-//channel enumeration
-enum Channel
-{
-	kRed,
-	kGreen,
-	kBlue,
-	kAlpha,
-};
-
 //the individual porter-duff operations
 template <class T>
 class InOp
@@ -77,7 +68,7 @@ public:
 		if (result > 255)
 			result = 255;
 
-		return result;
+		return (unsigned char)result;
 	}
 };
 
@@ -99,41 +90,22 @@ public:
 		if (result > 255)
 			result = 255;
 
-		return result;
+		return (unsigned char)result;
 	}
 };
 
 /////////////////////////////////////
-
-//crtp base class for a co-ordinate
-template <typename Derived>
-class Coord
-{
-public:
-	inline int GetX(int x) const
-	{
-		return static_cast<const Derived *>(this)->GetX_(x);
-	};
-
-	inline int GetY(int y) const
-	{
-		return static_cast<const Derived *>(this)->GetY_(y);
-	}
-};
 
 /////////////////////////////////////
 //clamps the input coordinate to zero
-class ZeroSourceCoord : public Coord<ZeroSourceCoord>
+class ZeroSourceCoord
 {
 public:
 	inline ZeroSourceCoord() {};
-
-	inline int GetX_(int) const { return 0; };
-	inline int GetY_(int) const { return 0; };
 };
 
 //wraps the input coordinate based on the width/height of the image
-class WrappedSourceCoord : public Coord<WrappedSourceCoord>
+class WrappedSourceCoord
 {
 public:
 	inline WrappedSourceCoord(int width, int height)
@@ -142,22 +114,39 @@ public:
 	{
 	}
 
-	inline int GetX_(int x) const
+	inline int GetX(int x) const
 	{
 		return Wrap(x, m_width);
 	};
 
-	inline int GetY_(int y) const
+	inline int GetY(int y) const
 	{
 		return Wrap(y, m_height);
+	};
+
+	////////////////
+	inline int GetXStep(int x) const
+	{
+		x++;
+
+		if (x >= m_width)
+			x -= m_width;
+
+		return x;
+	};
+
+	inline int GetYStep(int y) const
+	{
+		y++;
+		if (y >= m_height)
+			y -= m_height;
+		return y;
 	};
 
 private:
 	static int Wrap(int v, int max)
 	{
 		//this is poor
-//		while (v >= max)
-//			v -= max;
 		v = v % max;
 		return v;
 	};
@@ -167,13 +156,10 @@ private:
 };
 
 //passthrough
-class NormalSourceCoord : public Coord<NormalSourceCoord>
+class NormalSourceCoord
 {
 public:
 	inline NormalSourceCoord() {};
-
-	inline int GetX_(int x) const { return x; };
-	inline int GetY_(int y) const { return y; };
 };
 /////////////////////////////////////
 //base class for mux
@@ -181,11 +167,7 @@ template <PixelFormat pf>
 class Mux
 {
 public:
-	static inline const int GetOffset(const Channel c)
-	{
-		__builtin_trap();
-		return 0;
-	}
+	static inline int GetOffset(const Channel c);
 	static const int sm_numChannels = 0;
 };
 
@@ -193,7 +175,7 @@ template<>
 class Mux<kA8>
 {
 	public:
-	static inline const int GetOffset(const Channel c)
+	static inline int GetOffset(const Channel c)
 	{
 		if (c == kAlpha)
 			return 0;
@@ -209,7 +191,7 @@ template<>
 class Mux<kA8R8G8B8>
 {
 	public:
-	static inline const int GetOffset(const Channel c)
+	static inline int GetOffset(const Channel c)
 	{
 		switch (c)
 		{
@@ -233,7 +215,7 @@ template<>
 class Mux<kX8R8G8B8>
 {
 	public:
-	static inline const int GetOffset(const Channel c)
+	static inline int GetOffset(const Channel c)
 	{
 		switch (c)
 		{
@@ -257,7 +239,7 @@ template<>
 class Mux<kA8B8G8R8>
 {
 	public:
-	static inline const int GetOffset(const Channel c)
+	static inline int GetOffset(const Channel c)
 	{
 		switch (c)
 		{
@@ -281,7 +263,7 @@ template<>
 class Mux<kX8B8G8R8>
 {
 	public:
-	static inline const int GetOffset(const Channel c)
+	static inline int GetOffset(const Channel c)
 	{
 		switch (c)
 		{
@@ -311,15 +293,24 @@ class Value
 public:
 	//get a value from the image at x/y channel
 	template <class U = NormalSourceCoord>
-	inline T GetValue(int x, int y, Channel c, const U &coord = NormalSourceCoord()) const
+	inline T GetValue(int x, int y, Channel c) const
 	{
-		return static_cast<const Derived *>(this)->GetValue_(x, y, c, coord);
+		return static_cast<const Derived *>(this)->GetValue_(x, y, c);
 	}
 
 	//set a value in the image at x/y channel
 	inline void SetValue(int x, int y, Channel c, T value)
 	{
 		static_cast<Derived *>(this)->SetValue_(x, y, c, value);
+	}
+
+	inline int GetOffX(void) const
+	{
+		return static_cast<const Derived *>(this)->GetOffX_();
+	}
+	inline int GetOffY(void) const
+	{
+		return static_cast<const Derived *>(this)->GetOffY_();
 	}
 };
 /////////////////////////////////////
@@ -338,12 +329,8 @@ public:
 	}
 
 	template <class U = NormalSourceCoord>
-	inline T GetValue_(int x, int y, Channel c, const U &coord = NormalSourceCoord()) const
+	inline T GetValue_(int x, int y, Channel c) const
 	{
-		//update the coordinate
-		x = coord.GetX(m_offX + x);
-		y = coord.GetY(m_offY + y);
-
 		int offset = Mux<pf>::GetOffset(c);
 
 		//return the data or a fixed constant
@@ -362,8 +349,11 @@ public:
 			return;
 		}
 		else
-			m_pArray[(m_offY + y) * m_stride + (m_offX + x) * Mux<pf>::sm_numChannels + offset] = value;
+			m_pArray[y * m_stride + x * Mux<pf>::sm_numChannels + offset] = value;
 	}
+
+	inline int GetOffX_(void) const { return m_offX; };
+	inline int GetOffY_(void) const { return m_offY; };
 
 private:
 	T * const __restrict m_pArray;
@@ -384,16 +374,203 @@ public:
 	}
 
 	template <class U = NormalSourceCoord>
-	inline T GetValue_(int, int, Channel c, const U &coord = NormalSourceCoord()) const
+	inline T GetValue_(int, int, Channel c) const
 	{
 		int offset = Mux<pf>::GetOffset(c);
 
 		return m_values[offset];
 	}
 
+	inline int GetOffX_(void) const { return 0; };
+	inline int GetOffY_(void) const { return 0; };
+
 private:
 	T m_values[Mux<pf>::sm_numChannels];
 };
+/////////////////////////////////////
+
+template <typename Derived>
+class BaseIterator
+{
+public:
+	inline BaseIterator(const int maxLoop)
+	: m_maxLoop (maxLoop),
+	  m_loop (0)
+	{
+	};
+
+
+	inline int GetSource(void) const
+	{
+		return static_cast<const Derived *>(this)->GetSource_();
+	};
+
+	inline int GetMask(void) const
+	{
+		return static_cast<const Derived *>(this)->GetMask_();
+	};
+
+	inline int GetDest(void) const
+	{
+		return static_cast<const Derived *>(this)->GetDest_();
+	};
+
+	inline void Next(void)
+	{
+		static_cast<Derived *>(this)->Next_();
+	};
+
+	inline bool End(void) const
+	{
+		return m_loop < m_maxLoop;
+	};
+
+protected:
+	const int m_maxLoop;
+	int m_loop;
+
+private:
+	inline int GetLoop(void) const
+	{
+		return m_loop;
+	};
+};
+
+template <class SourceCoord, Axis axis>
+class Iterator : public BaseIterator<Iterator<SourceCoord, axis> >
+{
+public:
+	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const SourceCoord &);
+	inline int GetSource(void) const;
+	inline int GetMask(void) const;
+	inline int GetDest(void) const;
+	inline void Next(void);
+};
+
+template <Axis axis>
+class Iterator<ZeroSourceCoord, axis> : public BaseIterator<Iterator<ZeroSourceCoord, axis> >
+{
+public:
+	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const ZeroSourceCoord &)
+	: BaseIterator<Iterator<ZeroSourceCoord, axis> >(maxLoop),
+	  m_sourceOff (sourceOff),
+	  m_maskOff (maskOff),
+	  m_destOff (destOff)
+	{
+	};
+
+	inline int GetSource(void) const
+	{
+		return 0;
+	};
+
+	inline int GetMask(void) const
+	{
+		return this->m_loop + m_maskOff;
+	};
+
+	inline int GetDest(void) const
+	{
+		return this->m_loop + m_destOff;
+	};
+
+	inline void Next(void)
+	{
+		this->m_loop++;
+	};
+
+private:
+	const int m_sourceOff, m_maskOff, m_destOff;
+};
+
+template <Axis axis>
+class Iterator<NormalSourceCoord, axis> : public BaseIterator<Iterator<NormalSourceCoord, axis> >
+{
+public:
+	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const NormalSourceCoord &)
+	: BaseIterator<Iterator<NormalSourceCoord, axis> >(maxLoop),
+	  m_sourceOff (sourceOff),
+	  m_maskOff (maskOff),
+	  m_destOff (destOff)
+	{
+	};
+
+	inline int GetSource(void) const
+	{
+		return this->m_loop + m_sourceOff;
+	};
+
+	inline int GetMask(void) const
+	{
+		return this->m_loop + m_maskOff;
+	};
+
+	inline int GetDest(void) const
+	{
+		return this->m_loop + m_destOff;
+	};
+
+	inline void Next(void)
+	{
+		this->m_loop++;
+	};
+
+private:
+	const int m_sourceOff, m_maskOff, m_destOff;
+};
+
+template <Axis axis>
+class Iterator<WrappedSourceCoord, axis> : public BaseIterator<Iterator<WrappedSourceCoord, axis> >
+{
+public:
+	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const WrappedSourceCoord &coord)
+	: BaseIterator<Iterator<WrappedSourceCoord, axis> >(maxLoop),
+	  m_sourceOff (sourceOff),
+	  m_maskOff (maskOff),
+	  m_destOff (destOff),
+	  m_coord (coord)
+	{
+		if (axis == kX)
+			m_sourceOff = coord.GetX(m_sourceOff);
+		else if (axis == kY)
+			m_sourceOff = coord.GetY(m_sourceOff);
+//		else	//compile-time assert here
+
+	};
+
+	inline int GetSource(void) const
+	{
+		return m_sourceOff;
+	};
+
+	inline int GetMask(void) const
+	{
+		return this->m_loop + m_maskOff;
+	};
+
+	inline int GetDest(void) const
+	{
+		return this->m_loop + m_destOff;
+	};
+
+	inline void Next(void)
+	{
+		this->m_loop++;
+
+		if (axis == kX)
+			m_sourceOff = m_coord.GetXStep(m_sourceOff);
+		else if (axis == kY)
+			m_sourceOff = m_coord.GetYStep(m_sourceOff);
+	};
+
+private:
+
+	int m_sourceOff;
+	const int m_maskOff, m_destOff;
+	const WrappedSourceCoord &m_coord;
+};
+
+
 /////////////////////////////////////
 
 class PDOver
@@ -405,28 +582,36 @@ public:
 	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
 			const int width, const int height)
 	{
-		for (int y = 0; y < height; y++)
-			for (int x = 0; x < width; x++)
+		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
+
+		for (/* y */; y.End(); y.Next())
+		{
+			Iterator<SourceCoord, kX> x(source.GetOffX(), mask.GetOffX(), dest.GetOffX(), width, coord);
+			for (/* x */; x.End(); x.Next())
 			{
-				T mask_pixel = mask.GetValue(x, y, kAlpha);
+				const int mask_x = x.GetMask();
+				const int mask_y = y.GetMask();
+
+				T mask_pixel = mask.GetValue(mask_x, mask_y, kAlpha);
 
 				if (mask_pixel == 0)
 					continue;
 
-				T source_r = source.GetValue(x, y, kRed, coord);
-				T source_g = source.GetValue(x, y, kGreen, coord);
-				T source_b = source.GetValue(x, y, kBlue, coord);
-				T source_a = source.GetValue(x, y, kAlpha, coord);
+				const int source_x = x.GetSource();
+				const int source_y = y.GetSource();
 
-				T debug_source_r = source_r;
-				T debug_source_g = source_g;
-				T debug_source_b = source_b;
-				T debug_source_a = source_a;
+				T source_r = source.GetValue(source_x, source_y, kRed);
+				T source_g = source.GetValue(source_x, source_y, kGreen);
+				T source_b = source.GetValue(source_x, source_y, kBlue);
+				T source_a = source.GetValue(source_x, source_y, kAlpha);
 
-				T dest_r = dest.GetValue(x, y, kRed);
-				T dest_g = dest.GetValue(x, y, kGreen);
-				T dest_b = dest.GetValue(x, y, kBlue);
-				T dest_a = dest.GetValue(x, y, kAlpha);
+				const int dest_x = x.GetDest();
+				const int dest_y = y.GetDest();
+
+				T dest_r = dest.GetValue(dest_x, dest_y, kRed);
+				T dest_g = dest.GetValue(dest_x, dest_y, kGreen);
+				T dest_b = dest.GetValue(dest_x, dest_y, kBlue);
+				T dest_a = dest.GetValue(dest_x, dest_y, kAlpha);
 
 				if (mask_pixel != max)
 				{
@@ -441,14 +626,16 @@ public:
 				T final_b = OverOp<T>::Op(source_b, dest_b, max - source_a);
 				T final_a = OverOp<T>::Op(source_a, dest_a, max - source_a);
 
-				dest.SetValue(x, y, kRed, final_r);
-				dest.SetValue(x, y, kGreen, final_g);
-				dest.SetValue(x, y, kBlue, final_b);
-				dest.SetValue(x, y, kAlpha, final_a);
+				dest.SetValue(dest_x, dest_y, kRed, final_r);
+				dest.SetValue(dest_x, dest_y, kGreen, final_g);
+				dest.SetValue(dest_x, dest_y, kBlue, final_b);
+				dest.SetValue(dest_x, dest_y, kAlpha, final_a);
 			}
+		}
 	}
 };
 
+#if 0
 class PDOutReverse
 {
 public:
@@ -467,7 +654,7 @@ public:
 //					continue;
 
 				T source_a = source.GetValue(x, y, kAlpha, coord);
-				T debug_source_a = source_a;
+//				T debug_source_a = source_a;
 
 				T dest_r = dest.GetValue(x, y, kRed);
 				T dest_g = dest.GetValue(x, y, kGreen);
@@ -491,6 +678,7 @@ public:
 			}
 	}
 };
+#endif
 
 class PDAdd
 {
@@ -501,28 +689,36 @@ public:
 	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
 			const int width, const int height)
 	{
-		for (int y = 0; y < height; y++)
-			for (int x = 0; x < width; x++)
+		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
+
+		for (/* y */; y.End(); y.Next())
+		{
+			Iterator<SourceCoord, kX> x(source.GetOffX(), mask.GetOffX(), dest.GetOffX(), width, coord);
+			for (/* x */; x.End(); x.Next())
 			{
-				T mask_pixel = mask.GetValue(x, y, kAlpha);
+				const int mask_x = x.GetMask();
+				const int mask_y = y.GetMask();
+
+				T mask_pixel = mask.GetValue(mask_x, mask_y, kAlpha);
 
 				if (mask_pixel == 0)
 					continue;
 
-				T source_r = source.GetValue(x, y, kRed, coord);
-				T source_g = source.GetValue(x, y, kGreen, coord);
-				T source_b = source.GetValue(x, y, kBlue, coord);
-				T source_a = source.GetValue(x, y, kAlpha, coord);
+				const int source_x = x.GetSource();
+				const int source_y = y.GetSource();
 
-				T debug_source_r = source_r;
-				T debug_source_g = source_g;
-				T debug_source_b = source_b;
-				T debug_source_a = source_a;
+				T source_r = source.GetValue(source_x, source_y, kRed);
+				T source_g = source.GetValue(source_x, source_y, kGreen);
+				T source_b = source.GetValue(source_x, source_y, kBlue);
+				T source_a = source.GetValue(source_x, source_y, kAlpha);
 
-				T dest_r = dest.GetValue(x, y, kRed);
-				T dest_g = dest.GetValue(x, y, kGreen);
-				T dest_b = dest.GetValue(x, y, kBlue);
-				T dest_a = dest.GetValue(x, y, kAlpha);
+				const int dest_x = x.GetDest();
+				const int dest_y = y.GetDest();
+
+				T dest_r = dest.GetValue(dest_x, dest_y, kRed);
+				T dest_g = dest.GetValue(dest_x, dest_y, kGreen);
+				T dest_b = dest.GetValue(dest_x, dest_y, kBlue);
+				T dest_a = dest.GetValue(dest_x, dest_y, kAlpha);
 
 				if (mask_pixel != max)
 				{
@@ -537,11 +733,12 @@ public:
 				T final_b = AddOp<T>::Op(dest_b, source_b);
 				T final_a = AddOp<T>::Op(dest_a, source_a);
 
-				dest.SetValue(x, y, kRed, final_r);
-				dest.SetValue(x, y, kGreen, final_g);
-				dest.SetValue(x, y, kBlue, final_b);
-				dest.SetValue(x, y, kAlpha, final_a);
+				dest.SetValue(dest_x, dest_y, kRed, final_r);
+				dest.SetValue(dest_x, dest_y, kGreen, final_g);
+				dest.SetValue(dest_x, dest_y, kBlue, final_b);
+				dest.SetValue(dest_x, dest_y, kAlpha, final_a);
 			}
+		}
 	}
 };
 

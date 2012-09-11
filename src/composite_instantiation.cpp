@@ -89,6 +89,7 @@ extern "C" ptr2PdFunc EnumToFunc(const PorterDuffOp op,
 			TEST_FUNC(PDOver, kA8, kA8, kA8R8G8B8, true);
 		}
 	}
+#if 0
 	else if (op == kPictOpOutReverse)
 	{
 		if (mask_pf == kNoData)
@@ -164,6 +165,7 @@ extern "C" ptr2PdFunc EnumToFunc(const PorterDuffOp op,
 			TEST_FUNC(PDOver, kA8, kA8, kA8R8G8B8, true);
 		}
 	}
+#endif
 	else if (op == kPictOpAdd)
 	{
 		if (mask_pf == kNoData)

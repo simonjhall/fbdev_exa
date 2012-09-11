@@ -66,6 +66,22 @@ enum PixelFormat
 	kX8B8G8R8 = 0x20030888,			//xbgr
 };
 
+//channel enumeration
+enum Channel
+{
+	kRed,
+	kGreen,
+	kBlue,
+	kAlpha,
+};
+
+//coordinate axis
+enum Axis
+{
+	kX,
+	kY,
+};
+
 //function pointer for the thing that'll do our work
 typedef void(*ptr2PdFunc)(struct CompositeOp *pOp, int numOps,
 		unsigned char *pSource, unsigned char *pDest, unsigned char *pMask,
