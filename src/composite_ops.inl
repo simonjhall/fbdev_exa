@@ -292,10 +292,14 @@ class Value
 {
 public:
 	//get a value from the image at x/y channel
-	template <class U = NormalSourceCoord>
 	inline T GetValue(int x, int y, Channel c) const
 	{
 		return static_cast<const Derived *>(this)->GetValue_(x, y, c);
+	}
+
+	inline void Prefetch(int x, int y, const int offset) const
+	{
+		static_cast<const Derived *>(this)->Prefetch_(x, y, offset);
 	}
 
 	//set a value in the image at x/y channel
@@ -328,7 +332,11 @@ public:
 	{
 	}
 
-	template <class U = NormalSourceCoord>
+	inline void Prefetch_(int x, int y, const int offset) const
+	{
+		__builtin_prefetch(&m_pArray[y * m_stride + x * Mux<pf>::sm_numChannels + offset]);
+	}
+
 	inline T GetValue_(int x, int y, Channel c) const
 	{
 		int offset = Mux<pf>::GetOffset(c);
@@ -373,12 +381,16 @@ public:
 			m_values[count] = a[count];
 	}
 
-	template <class U = NormalSourceCoord>
 	inline T GetValue_(int, int, Channel c) const
 	{
 		int offset = Mux<pf>::GetOffset(c);
 
 		return m_values[offset];
+	}
+
+	inline void Prefetch_(int, int, int) const
+	{
+		//do nothing for fixed value
 	}
 
 	inline int GetOffX_(void) const { return 0; };
@@ -389,6 +401,7 @@ private:
 };
 /////////////////////////////////////
 
+//crtp iterator base class
 template <typename Derived>
 class BaseIterator
 {
@@ -399,36 +412,46 @@ public:
 	{
 	};
 
-
+	//get the source coordinate
 	inline int GetSource(void) const
 	{
 		return static_cast<const Derived *>(this)->GetSource_();
 	};
 
+	//get the mask coordinate
 	inline int GetMask(void) const
 	{
 		return static_cast<const Derived *>(this)->GetMask_();
 	};
 
+	//get the destination coordinate
 	inline int GetDest(void) const
 	{
 		return static_cast<const Derived *>(this)->GetDest_();
 	};
 
+	//move to the next element
 	inline void Next(void)
 	{
 		static_cast<Derived *>(this)->Next_();
 	};
 
+	//are we NOT at the end?
 	inline bool End(void) const
 	{
 		return m_loop < m_maxLoop;
+	};
+
+	inline bool DoSourcePrefetch(void) const
+	{
+		return static_cast<const Derived *>(this)->DoSourcePrefetch_();
 	};
 
 protected:
 	const int m_maxLoop;
 	int m_loop;
 
+	//not necessary
 private:
 	inline int GetLoop(void) const
 	{
@@ -436,17 +459,20 @@ private:
 	};
 };
 
+//generic version (unused)
 template <class SourceCoord, Axis axis>
 class Iterator : public BaseIterator<Iterator<SourceCoord, axis> >
 {
 public:
 	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const SourceCoord &);
-	inline int GetSource(void) const;
-	inline int GetMask(void) const;
-	inline int GetDest(void) const;
-	inline void Next(void);
+	inline int GetSource_(void) const;
+	inline int GetMask_(void) const;
+	inline int GetDest_(void) const;
+	inline void Next_(void);
+	inline bool DoSourcePrefetch_(void) const;
 };
 
+//specialised for source = (0, 0)
 template <Axis axis>
 class Iterator<ZeroSourceCoord, axis> : public BaseIterator<Iterator<ZeroSourceCoord, axis> >
 {
@@ -459,30 +485,36 @@ public:
 	{
 	};
 
-	inline int GetSource(void) const
+	inline int GetSource_(void) const
 	{
 		return 0;
 	};
 
-	inline int GetMask(void) const
+	inline int GetMask_(void) const
 	{
 		return this->m_loop + m_maskOff;
 	};
 
-	inline int GetDest(void) const
+	inline int GetDest_(void) const
 	{
 		return this->m_loop + m_destOff;
 	};
 
-	inline void Next(void)
+	inline void Next_(void)
 	{
 		this->m_loop++;
+	};
+
+	inline bool DoSourcePrefetch_(void) const
+	{
+		return false;
 	};
 
 private:
 	const int m_sourceOff, m_maskOff, m_destOff;
 };
 
+//specialised for passthrough for source
 template <Axis axis>
 class Iterator<NormalSourceCoord, axis> : public BaseIterator<Iterator<NormalSourceCoord, axis> >
 {
@@ -495,30 +527,36 @@ public:
 	{
 	};
 
-	inline int GetSource(void) const
+	inline int GetSource_(void) const
 	{
 		return this->m_loop + m_sourceOff;
 	};
 
-	inline int GetMask(void) const
+	inline int GetMask_(void) const
 	{
 		return this->m_loop + m_maskOff;
 	};
 
-	inline int GetDest(void) const
+	inline int GetDest_(void) const
 	{
 		return this->m_loop + m_destOff;
 	};
 
-	inline void Next(void)
+	inline void Next_(void)
 	{
 		this->m_loop++;
+	};
+
+	inline bool DoSourcePrefetch_(void) const
+	{
+		return true;
 	};
 
 private:
 	const int m_sourceOff, m_maskOff, m_destOff;
 };
 
+//specialised for wrapping on source
 template <Axis axis>
 class Iterator<WrappedSourceCoord, axis> : public BaseIterator<Iterator<WrappedSourceCoord, axis> >
 {
@@ -530,6 +568,7 @@ public:
 	  m_destOff (destOff),
 	  m_coord (coord)
 	{
+		//first go through, use an expensive wrap function
 		if (axis == kX)
 			m_sourceOff = coord.GetX(m_sourceOff);
 		else if (axis == kY)
@@ -538,29 +577,35 @@ public:
 
 	};
 
-	inline int GetSource(void) const
+	inline int GetSource_(void) const
 	{
 		return m_sourceOff;
 	};
 
-	inline int GetMask(void) const
+	inline int GetMask_(void) const
 	{
 		return this->m_loop + m_maskOff;
 	};
 
-	inline int GetDest(void) const
+	inline int GetDest_(void) const
 	{
 		return this->m_loop + m_destOff;
 	};
 
-	inline void Next(void)
+	inline void Next_(void)
 	{
 		this->m_loop++;
 
+		//however on subsequent goes it's a simple test and subtract
 		if (axis == kX)
 			m_sourceOff = m_coord.GetXStep(m_sourceOff);
 		else if (axis == kY)
 			m_sourceOff = m_coord.GetYStep(m_sourceOff);
+	};
+
+	inline bool DoSourcePrefetch_(void) const
+	{
+		return false;
 	};
 
 private:
@@ -589,14 +634,18 @@ public:
 			Iterator<SourceCoord, kX> x(source.GetOffX(), mask.GetOffX(), dest.GetOffX(), width, coord);
 			for (/* x */; x.End(); x.Next())
 			{
+				//get mask coordinates
 				const int mask_x = x.GetMask();
 				const int mask_y = y.GetMask();
 
 				T mask_pixel = mask.GetValue(mask_x, mask_y, kAlpha);
 
+				mask.Prefetch(mask_x, mask_y, 64);
+
 				if (mask_pixel == 0)
 					continue;
 
+				//get source coordinates
 				const int source_x = x.GetSource();
 				const int source_y = y.GetSource();
 
@@ -605,6 +654,10 @@ public:
 				T source_b = source.GetValue(source_x, source_y, kBlue);
 				T source_a = source.GetValue(source_x, source_y, kAlpha);
 
+				if (x.DoSourcePrefetch())
+					source.Prefetch(source_x, source_y, 64);
+
+				//get dest coordinates
 				const int dest_x = x.GetDest();
 				const int dest_y = y.GetDest();
 
@@ -612,6 +665,8 @@ public:
 				T dest_g = dest.GetValue(dest_x, dest_y, kGreen);
 				T dest_b = dest.GetValue(dest_x, dest_y, kBlue);
 				T dest_a = dest.GetValue(dest_x, dest_y, kAlpha);
+
+				dest.Prefetch(dest_x, dest_y, 64);
 
 				if (mask_pixel != max)
 				{
@@ -626,6 +681,7 @@ public:
 				T final_b = OverOp<T>::Op(source_b, dest_b, max - source_a);
 				T final_a = OverOp<T>::Op(source_a, dest_a, max - source_a);
 
+				//write back to destination
 				dest.SetValue(dest_x, dest_y, kRed, final_r);
 				dest.SetValue(dest_x, dest_y, kGreen, final_g);
 				dest.SetValue(dest_x, dest_y, kBlue, final_b);
@@ -696,6 +752,7 @@ public:
 			Iterator<SourceCoord, kX> x(source.GetOffX(), mask.GetOffX(), dest.GetOffX(), width, coord);
 			for (/* x */; x.End(); x.Next())
 			{
+				//get mask coordinates
 				const int mask_x = x.GetMask();
 				const int mask_y = y.GetMask();
 
@@ -704,6 +761,7 @@ public:
 				if (mask_pixel == 0)
 					continue;
 
+				//get source coordinates
 				const int source_x = x.GetSource();
 				const int source_y = y.GetSource();
 
@@ -712,6 +770,7 @@ public:
 				T source_b = source.GetValue(source_x, source_y, kBlue);
 				T source_a = source.GetValue(source_x, source_y, kAlpha);
 
+				//get dest coordinates
 				const int dest_x = x.GetDest();
 				const int dest_y = y.GetDest();
 
@@ -733,6 +792,7 @@ public:
 				T final_b = AddOp<T>::Op(dest_b, source_b);
 				T final_a = AddOp<T>::Op(dest_a, source_a);
 
+				//write back to dest image
 				dest.SetValue(dest_x, dest_y, kRed, final_r);
 				dest.SetValue(dest_x, dest_y, kGreen, final_g);
 				dest.SetValue(dest_x, dest_y, kBlue, final_b);
