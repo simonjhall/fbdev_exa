@@ -29,11 +29,18 @@ Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 		int dy, int alu, Pixel planemask)
 {
 //	xf86DrvMsg(0, X_DEFAULT, "%s %p->%p\n", __FUNCTION__, pSrcPixmap, pDstPixmap);
+//	return FALSE;
 
 	//check they're valid pointers
 	if ((pDstPixmap == NULL) || (pSrcPixmap == NULL))
 	{
 		xf86DrvMsg(0, X_WARNING, "%s (pPixmapDst == NULL) || (pPixmapSrc == NULL)\n", __FUNCTION__);
+		return FALSE;
+	}
+
+	if (exaGetPixmapAddress(pDstPixmap) == 0 && exaGetPixmapAddress(pSrcPixmap) == 0)
+	{
+		xf86DrvMsg(0, X_WARNING, "%s source %p dest %p\n", __FUNCTION__, exaGetPixmapAddress(pDstPixmap), exaGetPixmapAddress(pSrcPixmap));
 		return FALSE;
 	}
 
@@ -84,6 +91,8 @@ Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 		int dstX, int dstY, int width, int height)
 {
+//	xf86DrvMsg(0, X_DEFAULT, "%s %p, %d %d, %d %d, %d %d\n",
+//			__FUNCTION__, pDstPixmap, srcX, srcY, dstX, dstY, width, height);
 	MY_ASSERT(pDstPixmap == g_copyDetails.m_pDst);
 	unsigned char *pSrc, *pDst;
 	pSrc = exaGetPixmapAddress(g_copyDetails.m_pSrc);
@@ -108,7 +117,15 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 	}
 	else	//do the whole thing as one 2d operation
 	{
-		//get a new dma block
+//		int y;
+//		for (y = 0; y < height; y++)
+//		{
+//			unsigned char *src = &pSrc[(y + srcY) * srcPitch + srcX * g_copyDetails.m_bpp];
+//			unsigned char *dst = &pDst[(y + dstY) * dstPitch + dstX * g_copyDetails.m_bpp];
+//
+//			ForwardCopy(dst, src, width * g_copyDetails.m_bpp);
+//		}
+
 		Copy2D4kSrcInc(&pDst[dstY * dstPitch + dstX * g_copyDetails.m_bpp],
 				&pSrc[+ srcY * srcPitch + srcX * g_copyDetails.m_bpp],
 				width * g_copyDetails.m_bpp,

@@ -37,6 +37,7 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 		PicturePtr pMaskPicture, PicturePtr pDstPicture)
 {
 //	xf86DrvMsg(0, X_DEFAULT, "%s %p+%p->%p\n", __FUNCTION__, pSrcPicture, pMaskPicture, pDstPicture);
+//	return FALSE;
 
 	//only two operations accelerated
 	if (op != PictOpOver && op != PictOpAdd/* && op != PictOpOutReverse*/)
@@ -141,7 +142,9 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 	//out of space, do now
 	if (g_pendingOps == MAX_COMP_OPS)
 	{
+		fprintf(stderr, "max composite ops - flushing now\n");
 		exaWaitSync(pDst->drawable.pScreen);
+//		WaitMarker(GetScreen(), 0);
 
 		MY_ASSERT(g_pCompositor);
 		g_pCompositor(g_opList, g_pendingOps,
@@ -164,6 +167,7 @@ void DoneComposite(PixmapPtr pDst)
 	{
 		//block on
 		exaWaitSync(pDst->drawable.pScreen);
+//		WaitMarker(GetScreen(), 0);
 
 		MY_ASSERT(g_pCompositor);
 		g_pCompositor(g_opList, g_pendingOps,

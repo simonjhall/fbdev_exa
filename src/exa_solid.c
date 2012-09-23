@@ -28,11 +28,18 @@ Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 		Pixel fg)
 {
 //	xf86DrvMsg(0, X_DEFAULT, "%s %p\n", __FUNCTION__, pPixmap);
+//	return FALSE;
 
 	//check it's a valid pointer
 	if (pPixmap == NULL)
 	{
 		xf86DrvMsg(0, X_WARNING, "%s (pPixmap == NULL)\n", __FUNCTION__);
+		return FALSE;
+	}
+
+	if (exaGetPixmapAddress(pPixmap) == 0)
+	{
+		xf86DrvMsg(0, X_WARNING, "%s dest %p\n", __FUNCTION__, exaGetPixmapAddress(pPixmap));
 		return FALSE;
 	}
 
@@ -103,6 +110,7 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 		//it could be something already enqueued taking it
 		if (IsDmaPending())
 			exaWaitSync(g_solidDetails.m_pDst->drawable.pScreen);
+//			WaitMarker(GetScreen(), 0);
 
 		//or simply we simply haven't reset it yet after past work
 		ResetSolidBuffer();

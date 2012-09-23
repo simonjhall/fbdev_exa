@@ -203,6 +203,7 @@ struct DmaControlBlock *AllocDmaBlock(void)
 		}
 
 		exaWaitSync(GetScreen());
+//		WaitMarker(GetScreen(), 0);
 		//head will be reset, but we need to clear it before the return
 		g_headOfDma = FALSE;
 		MY_ASSERT(g_dmaTail == 0);
@@ -261,8 +262,8 @@ void *GetMemoryBase(void)
 	if (!run)
 	{
 		run = 1;
-		g_pOffscreenBase = kern_alloc(12 * 1024 * 1024);
 		g_offscreenSize = 12 * 1024 * 1024;
+		g_pOffscreenBase = kern_alloc(g_offscreenSize);
 
 		MY_ASSERT(g_pOffscreenBase);
 

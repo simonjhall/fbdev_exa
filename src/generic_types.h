@@ -59,11 +59,11 @@ enum PorterDuffOp
 enum PixelFormat
 {
 	kNoData,
-	kA8 = 0x8018000,
-	kA8R8G8B8 = 0x20028888,			//argb
-	kX8R8G8B8 = 0x20020888,			//xrgb
-	kA8B8G8R8 = 0x20038888,			//abgr
-	kX8B8G8R8 = 0x20030888,			//xbgr
+	kA8 = 0x8018000,		//134316032
+	kA8R8G8B8 = 0x20028888,			//argb, 537036936
+	kX8R8G8B8 = 0x20020888,			//xrgb, 537004168
+	kA8B8G8R8 = 0x20038888,			//abgr, 537102472
+	kX8B8G8R8 = 0x20030888,			//xbgr, 537069704
 };
 
 //channel enumeration

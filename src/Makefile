@@ -158,9 +158,9 @@ AUTOMAKE = ${SHELL} /home/simon/Desktop/x/src/driver/xf86-video-fbdev/missing --
 AWK = mawk
 BASE_CFLAGS =  -Wall -Wpointer-arith -Wmissing-declarations -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Wnested-externs -Wbad-function-cast -Wold-style-definition -Wdeclaration-after-statement -Wunused -Wuninitialized -Wshadow -Wcast-qual -Wmissing-noreturn -Wmissing-format-attribute -Wredundant-decls -Werror=implicit -Werror=nonnull -Werror=init-self -Werror=main -Werror=missing-braces -Werror=sequence-point -Werror=return-type -Werror=trigraphs -Werror=array-bounds -Werror=write-strings -Werror=address -Werror=int-to-pointer-cast -Werror=pointer-to-int-cast
 CC = arm-linux-gnueabi-gcc -std=gnu99
-CCAS = arm-linux-gnueabi-gcc -std=gnu99 -march=armv6
+CCAS = time arm-linux-gnueabi-gcc -std=gnu99 -march=armv6
 CCDEPMODE = depmode=gcc3
-CFLAGS = -g -O3 -march=armv6 -marm
+CFLAGS = -g -O0 -march=armv6 -marm
 CHANGELOG_CMD = (GIT_DIR=$(top_srcdir)/.git git log > $(top_srcdir)/.changelog.tmp && mv $(top_srcdir)/.changelog.tmp $(top_srcdir)/ChangeLog) || (rm -f $(top_srcdir)/.changelog.tmp; touch $(top_srcdir)/ChangeLog; echo 'git directory not found: installing possibly empty changelog.' >&2)
 CPP = arm-linux-gnueabi-gcc -std=gnu99 -E
 CPPFLAGS = 
@@ -313,8 +313,10 @@ fbdev_drv_la_SOURCES = \
 
 all: all-am
 
-exa_composite_ops.S: composite_ops.inl composite_instantiation.cpp
-	time clang++ -S composite_instantiation.cpp -o exa_composite_ops.S -march=armv6 -O3 -mtune=arm1176 -std=c++11 -g
+exa_composite_ops.S: composite_ops.inl composite_instantiation.cpp macro.s
+	time clang++ -S composite_instantiation.cpp -o internal_ops.S -march=armv6 -O3 -mtune=arm1176 -std=c++11 -ccc-host-triple armv6-unknown-linux-gnueabi
+	cp macro.s exa_composite_ops.S
+	cat internal_ops.S >> exa_composite_ops.S
 
 .SUFFIXES:
 .SUFFIXES: .s .c .lo .o .obj .S
