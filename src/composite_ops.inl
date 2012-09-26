@@ -55,8 +55,8 @@ public:
 	}
 
 
-	static const int sm_numChannels = 0;
-	static const int sm_alphaOffsetAt = 0;
+	static const unsigned int sm_numChannels = 0;
+	static const unsigned int sm_alphaOffsetAt = 0;
 };
 
 template <PixelFormat pf>
@@ -65,8 +65,8 @@ class Mux : public MuxBase<Mux<pf> >
 public:
 	static inline int GetOffset_(const Channel c);
 
-	static const int sm_numChannels = 0;
-	static const int sm_alphaOffsetAt = 0;
+	static const unsigned int sm_numChannels = 0;
+	static const unsigned int sm_alphaOffsetAt = 0;
 };
 
 template<>
@@ -83,8 +83,8 @@ class Mux<kA8> : public MuxBase<Mux<kA8> >
 		}
 	}
 
-	static const int sm_numChannels = 1;
-	static const int sm_alphaOffsetAt = 0;
+	static const unsigned int sm_numChannels = 1;
+	static const unsigned int sm_alphaOffsetAt = 0;
 	static const PixelFormat sm_formatPlusAlpha = kA8;
 };
 
@@ -109,8 +109,8 @@ class Mux<kA8R8G8B8> : public MuxBase<Mux<kA8R8G8B8> >
 			return 0;
 		}
 	}
-	static const int sm_numChannels = 4;
-	static const int sm_alphaOffsetAt = 3;
+	static const unsigned int sm_numChannels = 4;
+	static const unsigned int sm_alphaOffsetAt = 3;
 	static const PixelFormat sm_formatPlusAlpha = kA8R8G8B8;
 };
 
@@ -135,8 +135,8 @@ class Mux<kX8R8G8B8> : public MuxBase<Mux<kX8R8G8B8> >
 			return 0;
 		}
 	}
-	static const int sm_numChannels = 4;
-	static const int sm_alphaOffsetAt = 3;
+	static const unsigned int sm_numChannels = 4;
+	static const unsigned int sm_alphaOffsetAt = 3;
 	static const PixelFormat sm_formatPlusAlpha = kA8R8G8B8;
 };
 
@@ -161,8 +161,8 @@ class Mux<kA8B8G8R8> : public MuxBase<Mux<kA8B8G8R8> >
 			return 0;
 		}
 	}
-	static const int sm_numChannels = 4;
-	static const int sm_alphaOffsetAt = 3;
+	static const unsigned int sm_numChannels = 4;
+	static const unsigned int sm_alphaOffsetAt = 3;
 	static const PixelFormat sm_formatPlusAlpha = kA8B8G8R8;
 };
 
@@ -187,8 +187,8 @@ class Mux<kX8B8G8R8> : public MuxBase<Mux<kX8B8G8R8> >
 			return 0;
 		}
 	}
-	static const int sm_numChannels = 4;
-	static const int sm_alphaOffsetAt = 3;
+	static const unsigned int sm_numChannels = 4;
+	static const unsigned int sm_alphaOffsetAt = 3;
 	static const PixelFormat sm_formatPlusAlpha = kA8B8G8R8;
 };
 
@@ -310,6 +310,11 @@ inline unsigned int __uxtb16(unsigned int b, const unsigned int ror)
 	return __builtin_arm_usat(b, 8);
 }
 
+inline unsigned int __uqadd8(unsigned int a, unsigned int b)
+{
+	return __builtin_arm_qadd(a, b);
+}
+
 #else
 
 inline unsigned int __uxtab16(unsigned int a, unsigned int b, unsigned int ror)
@@ -363,6 +368,38 @@ inline unsigned int __uxtb16(unsigned int b, unsigned int ror)
 	unsigned short b_high = (ror_b >> 16) & 0xff;
 
 	return b_low | (b_high << 16);
+}
+
+inline unsigned int __uqadd8(unsigned int a, unsigned int b)
+{
+	unsigned char ar, ag, ab, aa;
+	unsigned char br, bg, bb, ba;
+
+	Mux<kA8R8G8B8>::Separate(a, ar, ag, ab, aa);
+	Mux<kA8R8G8B8>::Separate(b, br, bg, bb, ba);
+
+	unsigned int fr, fg, fb, fa;
+
+	fr = ar + br;
+	if (fr > 255)
+		fr = 255;
+
+	fg = ag + bg;
+	if (fg > 255)
+		fg = 255;
+
+	fb = ab + bb;
+	if (fb > 255)
+		fb = 255;
+
+	fa = aa + ba;
+	if (fa > 255)
+		fa = 255;
+
+	unsigned int out;
+	Mux<kA8R8G8B8>::Combine(out, fr, fg, fb, fa);
+
+	return out;
 }
 
 #endif
@@ -439,15 +476,15 @@ public:
 	}
 };
 
-template <class T>
+template <class T, PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class AddOp
 {
 public:
 	static inline T Op(const T a, const T b);
 };
 
-template <>
-class AddOp<unsigned char>
+template <PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
+class AddOp<unsigned char, SourcePf, MaskPf, DestPf>
 {
 public:
 	static inline unsigned char Op(const unsigned char a, const unsigned char b)
@@ -458,6 +495,31 @@ public:
 			result = 255;
 
 		return (unsigned char)result;
+	}
+
+	static inline unsigned int Op4(const unsigned int a, const unsigned int b)
+	{
+#if 0
+		unsigned char ar, ag, ab, aa;
+		unsigned char br, bg, bb, ba;
+
+		Mux<SourcePf>::Separate(a, ar, ag, ab, aa);
+		Mux<DestPf>::Separate(b, br, bg, bb, ba);
+
+		unsigned char rr, rg, rb, ra;
+		rr = Op(ar, br);
+		rg = Op(ag, bg);
+		rb = Op(ab, bb);
+		ra = Op(aa, ba);
+
+		unsigned int output;
+		Mux<DestPf>::Combine(output, rr, rg, rb, ra);
+		return output;
+#else
+		unsigned int rebuilt_a;
+		rebuilt_a = Rotate<SourcePf, DestPf>(a);
+		return __uqadd8(b, rebuilt_a);
+#endif
 	}
 };
 
@@ -488,6 +550,7 @@ public:
 
 	static inline unsigned int Op4(const unsigned int a, const unsigned int b, const unsigned int one_minus_alpha)
 	{
+#if 0
 		unsigned char ar, ag, ab, aa;
 		unsigned char br, bg, bb, ba;
 
@@ -495,14 +558,35 @@ public:
 		Mux<DestPf>::Separate(b, br, bg, bb, ba);
 
 		unsigned char rr, rg, rb, ra;
-		rr = Op(ar, br, one_minus_alpha & 0xff);
-		rg = Op(ag, bg, one_minus_alpha & 0xff);
-		rb = Op(ab, bb, one_minus_alpha & 0xff);
-		ra = Op(aa, ba, one_minus_alpha & 0xff);
+		rr = Op(ar, br, one_minus_alpha);
+		rg = Op(ag, bg, one_minus_alpha);
+		rb = Op(ab, bb, one_minus_alpha);
+		ra = Op(aa, ba, one_minus_alpha);
 
 		unsigned int output;
 		Mux<DestPf>::Combine(output, rr, rg, rb, ra);
 		return output;
+#else
+		unsigned int rebuilt_a;
+		rebuilt_a = Rotate<SourcePf, DestPf>(a);
+
+		unsigned int b_low = b & 0x00ff00ff;
+		unsigned int b_high = (b >> 8) & 0x00ff00ff;
+
+		//b * 1-alpha + 128
+		//mla please
+		b_low = b_low * one_minus_alpha + 0x00800080;
+		b_high = b_high * one_minus_alpha + 0x00800080;
+
+		//source = (source + (source >> 8)) >> 8
+		b_low = __uxtab16(b_low, b_low, 8);
+		b_high = __uxtab16(b_high, b_high, 8);
+		b_low = __uxtb16(b_low, 8);
+		b_high = __uxtb16(b_high, 8);
+
+		unsigned int combined = b_low | (b_high << 8);
+		return __uqadd8(combined, rebuilt_a);
+#endif
 	}
 };
 
@@ -648,18 +732,23 @@ template <class T, PixelFormat pf, T alpha>
 class VaryingValue : public Value<T, VaryingValue<T, pf, alpha> >
 {
 public:
-	inline VaryingValue(T * const __restrict p, int offX, int offY, int stride)
+	inline VaryingValue(T * const __restrict p, int offX, int offY, unsigned int stride)
 	: Value<T, VaryingValue<T, pf, alpha> >(),
 	  m_pArray (p),
+	  m_pArray4 ((unsigned int *)p),
 	  m_offX (offX),
 	  m_offY (offY),
-	  m_stride (stride)
+	  m_stride (stride),
+	  m_stride4 (stride >> 2)
 	{
 	}
 
 	inline void Prefetch_(int x, int y, const int offset) const
 	{
-		__builtin_prefetch(&m_pArray[y * m_stride + x * Mux<pf>::sm_numChannels + offset]);
+		if (Mux<pf>::sm_numChannels == 1)
+			__builtin_prefetch(&m_pArray[y * m_stride + x * Mux<pf>::sm_numChannels + offset]);
+		else if (Mux<pf>::sm_numChannels == 4)
+			__builtin_prefetch(&m_pArray4[y * m_stride4 + x + (offset >> 2)]);
 	}
 
 	inline T GetValue_(int x, int y, Channel c) const
@@ -681,7 +770,7 @@ public:
 		}
 		else
 		{
-			unsigned int value = ((unsigned int *)m_pArray)[y * m_stride / Mux<pf>::sm_numChannels + x];
+			unsigned int value = m_pArray4[y * m_stride4 + x];
 
 			if (Mux<pf>::GetOffset(kAlpha) == -1)
 				value = value | (255 << (Mux<pf>::sm_alphaOffsetAt * 8));
@@ -714,7 +803,7 @@ public:
 			if (Mux<pf>::GetOffset(kAlpha) == -1)
 				value = value | (255 << (Mux<pf>::sm_alphaOffsetAt * 8));
 
-			((unsigned int *)m_pArray)[y * m_stride / Mux<pf>::sm_numChannels + x] = value;
+			((unsigned int *)m_pArray)[y * (m_stride / Mux<pf>::sm_numChannels) + x] = value;
 		}
 	}
 
@@ -725,9 +814,11 @@ public:
 
 private:
 	T * const __restrict m_pArray;
-	const int m_offX;
-	const int m_offY;
-	const int m_stride;
+	unsigned int * const __restrict m_pArray4;
+	const unsigned int m_offX;
+	const unsigned int m_offY;
+	const unsigned int m_stride;
+	const unsigned int m_stride4;
 };
 
 //loads pixel data from a constant array
@@ -737,7 +828,7 @@ class FixedValue : public Value<T, FixedValue<T, pf> >
 public:
 	inline FixedValue(const T *a)
 	{
-		for (int count = 0; count < Mux<pf>::sm_numChannels; count++)
+		for (unsigned int count = 0; count < Mux<pf>::sm_numChannels; count++)
 			m_values[count] = a[count];
 	}
 
@@ -775,26 +866,26 @@ template <typename Derived>
 class BaseIterator
 {
 public:
-	inline BaseIterator(const int maxLoop)
+	inline BaseIterator(const unsigned int maxLoop)
 	: m_maxLoop (maxLoop),
 	  m_loop (0)
 	{
 	};
 
 	//get the source coordinate
-	inline int GetSource(void) const
+	inline unsigned int GetSource(void) const
 	{
 		return static_cast<const Derived *>(this)->GetSource_();
 	};
 
 	//get the mask coordinate
-	inline int GetMask(void) const
+	inline unsigned int GetMask(void) const
 	{
 		return static_cast<const Derived *>(this)->GetMask_();
 	};
 
 	//get the destination coordinate
-	inline int GetDest(void) const
+	inline unsigned int GetDest(void) const
 	{
 		return static_cast<const Derived *>(this)->GetDest_();
 	};
@@ -817,12 +908,12 @@ public:
 	};
 
 protected:
-	const int m_maxLoop;
-	int m_loop;
+	const unsigned int m_maxLoop;
+	unsigned int m_loop;
 
 	//not necessary
 private:
-	inline int GetLoop(void) const
+	inline unsigned int GetLoop(void) const
 	{
 		return m_loop;
 	};
@@ -833,10 +924,10 @@ template <class SourceCoord, Axis axis>
 class Iterator : public BaseIterator<Iterator<SourceCoord, axis> >
 {
 public:
-	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const SourceCoord &);
-	inline int GetSource_(void) const;
-	inline int GetMask_(void) const;
-	inline int GetDest_(void) const;
+	inline Iterator(const unsigned int sourceOff, const unsigned int maskOff, const unsigned int destOff, const unsigned int maxLoop, const SourceCoord &);
+	inline unsigned int GetSource_(void) const;
+	inline unsigned int GetMask_(void) const;
+	inline unsigned int GetDest_(void) const;
 	inline void Next_(void);
 	inline bool DoSourcePrefetch_(void) const;
 };
@@ -846,7 +937,7 @@ template <Axis axis>
 class Iterator<ZeroSourceCoord, axis> : public BaseIterator<Iterator<ZeroSourceCoord, axis> >
 {
 public:
-	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const ZeroSourceCoord &)
+	inline Iterator(const unsigned int sourceOff, const unsigned int maskOff, const unsigned int destOff, const unsigned int maxLoop, const ZeroSourceCoord &)
 	: BaseIterator<Iterator<ZeroSourceCoord, axis> >(maxLoop),
 	  m_sourceOff (sourceOff),
 	  m_maskOff (maskOff),
@@ -854,17 +945,17 @@ public:
 	{
 	};
 
-	inline int GetSource_(void) const
+	inline unsigned int GetSource_(void) const
 	{
 		return 0;
 	};
 
-	inline int GetMask_(void) const
+	inline unsigned int GetMask_(void) const
 	{
 		return this->m_loop + m_maskOff;
 	};
 
-	inline int GetDest_(void) const
+	inline unsigned int GetDest_(void) const
 	{
 		return this->m_loop + m_destOff;
 	};
@@ -880,7 +971,7 @@ public:
 	};
 
 private:
-	const int m_sourceOff, m_maskOff, m_destOff;
+	const unsigned int m_sourceOff, m_maskOff, m_destOff;
 };
 
 //specialised for passthrough for source
@@ -888,7 +979,7 @@ template <Axis axis>
 class Iterator<NormalSourceCoord, axis> : public BaseIterator<Iterator<NormalSourceCoord, axis> >
 {
 public:
-	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const NormalSourceCoord &)
+	inline Iterator(const unsigned int sourceOff, const unsigned int maskOff, const unsigned int destOff, const unsigned int maxLoop, const NormalSourceCoord &)
 	: BaseIterator<Iterator<NormalSourceCoord, axis> >(maxLoop),
 	  m_sourceOff (sourceOff),
 	  m_maskOff (maskOff),
@@ -896,17 +987,17 @@ public:
 	{
 	};
 
-	inline int GetSource_(void) const
+	inline unsigned int GetSource_(void) const
 	{
 		return this->m_loop + m_sourceOff;
 	};
 
-	inline int GetMask_(void) const
+	inline unsigned int GetMask_(void) const
 	{
 		return this->m_loop + m_maskOff;
 	};
 
-	inline int GetDest_(void) const
+	inline unsigned int GetDest_(void) const
 	{
 		return this->m_loop + m_destOff;
 	};
@@ -922,7 +1013,7 @@ public:
 	};
 
 private:
-	const int m_sourceOff, m_maskOff, m_destOff;
+	const unsigned int m_sourceOff, m_maskOff, m_destOff;
 };
 
 //specialised for wrapping on source
@@ -930,7 +1021,7 @@ template <Axis axis>
 class Iterator<WrappedSourceCoord, axis> : public BaseIterator<Iterator<WrappedSourceCoord, axis> >
 {
 public:
-	inline Iterator(const int sourceOff, const int maskOff, const int destOff, const int maxLoop, const WrappedSourceCoord &coord)
+	inline Iterator(const unsigned int sourceOff, const unsigned int maskOff, const unsigned int destOff, const unsigned int maxLoop, const WrappedSourceCoord &coord)
 	: BaseIterator<Iterator<WrappedSourceCoord, axis> >(maxLoop),
 	  m_sourceOff (sourceOff),
 	  m_maskOff (maskOff),
@@ -946,17 +1037,17 @@ public:
 
 	};
 
-	inline int GetSource_(void) const
+	inline unsigned int GetSource_(void) const
 	{
 		return m_sourceOff;
 	};
 
-	inline int GetMask_(void) const
+	inline unsigned int GetMask_(void) const
 	{
 		return this->m_loop + m_maskOff;
 	};
 
-	inline int GetDest_(void) const
+	inline unsigned int GetDest_(void) const
 	{
 		return this->m_loop + m_destOff;
 	};
@@ -979,8 +1070,8 @@ public:
 
 private:
 
-	int m_sourceOff;
-	const int m_maskOff, m_destOff;
+	unsigned int m_sourceOff;
+	const unsigned int m_maskOff, m_destOff;
 	const WrappedSourceCoord &m_coord;
 };
 
@@ -992,7 +1083,7 @@ class PDOver
 public:
 	template <class Source, class Dest, class Mask, class SourceCoord>
 	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
-			const int width, const int height)
+			const unsigned int width, const unsigned int height)__attribute__ ((noinline))
 	{
 		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
 
@@ -1002,20 +1093,26 @@ public:
 			for (/* x */; x.End(); x.Next())
 			{
 				//get mask coordinates
-				const int mask_x = x.GetMask();
-				const int mask_y = y.GetMask();
+				const unsigned int mask_x = x.GetMask();
+				const unsigned int mask_y = y.GetMask();
 
+#ifdef DEBUG
 				unsigned char mask_pixel = mask.GetValue(mask_x, mask_y, kAlpha);
+#endif
 				unsigned int mask4 = mask.GetValue4(mask_x, mask_y);
 
 				mask.Prefetch(mask_x, mask_y, 64);
 
+#ifdef DEBUG
 				if (mask_pixel == 0)
+					continue;
+#endif
+				if (mask4 == 0)
 					continue;
 
 				//get source coordinates
-				const int source_x = x.GetSource();
-				const int source_y = y.GetSource();
+				const unsigned int source_x = x.GetSource();
+				const unsigned int source_y = y.GetSource();
 
 #ifdef DEBUG
 				unsigned char source_r = source.GetValue(source_x, source_y, kRed);
@@ -1038,8 +1135,8 @@ public:
 					source.Prefetch(source_x, source_y, 64);
 
 				//get dest coordinates
-				const int dest_x = x.GetDest();
-				const int dest_y = y.GetDest();
+				const unsigned int dest_x = x.GetDest();
+				const unsigned int dest_y = y.GetDest();
 
 #ifdef DEBUG
 				unsigned char dest_r = dest.GetValue(dest_x, dest_y, kRed);
@@ -1050,6 +1147,7 @@ public:
 
 				unsigned int dest4 = dest.GetValue4(dest_x, dest_y);
 #ifdef DEBUG
+				unsigned int debug_dest4 = dest4;
 				{
 					unsigned char dr, dg, db, da;
 					Mux<Dest::sm_format>::Separate(dest4, dr, dg, db, da);
@@ -1083,11 +1181,12 @@ public:
 				}
 #endif
 
-				source4 = InOp<unsigned char, Source::sm_format, Mask::sm_format, Mux<Source::sm_format>::sm_formatPlusAlpha>::Op4(source4, mask4);
+				if (mask4 != 255)
+					source4 = InOp<unsigned char, Source::sm_format, Mask::sm_format, Mux<Source::sm_format>::sm_formatPlusAlpha>::Op4(source4, mask4);
 
 
 #ifdef DEBUG
-//				if (mask_pixel != 255)
+				if (mask_pixel != 255)
 				{
 					source_r = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_r, mask_pixel);
 					source_g = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_g, mask_pixel);
@@ -1120,7 +1219,7 @@ public:
 				else
 					sa = (source4 >> (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kAlpha) * 8)) & 0xff;
 
-				dest4 = OverOp<unsigned char, Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::sm_formatPlusAlpha, Mask::sm_format, Dest::sm_format>::Op4(source4, dest4, 255 - sa);
+				dest4 = OverOp<unsigned char, Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::sm_formatPlusAlpha, Mask::sm_format, Dest::sm_format>::Op4(source4, dest4, sa ^ 255);
 #ifdef DEBUG
 				{
 					unsigned char vr, vg, vb, va;
@@ -1198,7 +1297,7 @@ class PDAdd
 public:
 	template <class Source, class Dest, class Mask, class SourceCoord>
 	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
-			const int width, const int height)
+			const unsigned int width, const unsigned int height)
 	{
 		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
 
@@ -1208,32 +1307,94 @@ public:
 			for (/* x */; x.End(); x.Next())
 			{
 				//get mask coordinates
-				const int mask_x = x.GetMask();
-				const int mask_y = y.GetMask();
+				const unsigned int mask_x = x.GetMask();
+				const unsigned int mask_y = y.GetMask();
 
+#ifdef DEBUG
 				unsigned char mask_pixel = mask.GetValue(mask_x, mask_y, kAlpha);
+#endif
+				unsigned int mask4 = mask.GetValue4(mask_x, mask_y);
 
+				mask.Prefetch(mask_x, mask_y, 64);
+
+#ifdef DEBUG
 				if (mask_pixel == 0)
+					continue;
+#endif
+				if (mask4 == 0)
 					continue;
 
 				//get source coordinates
-				const int source_x = x.GetSource();
-				const int source_y = y.GetSource();
+				const unsigned int source_x = x.GetSource();
+				const unsigned int source_y = y.GetSource();
 
+#ifdef DEBUG
 				unsigned char source_r = source.GetValue(source_x, source_y, kRed);
 				unsigned char source_g = source.GetValue(source_x, source_y, kGreen);
 				unsigned char source_b = source.GetValue(source_x, source_y, kBlue);
 				unsigned char source_a = source.GetValue(source_x, source_y, kAlpha);
+#endif
+
+				unsigned int source4 = source.GetValue4(source_x, source_y);
+#ifdef DEBUG
+				unsigned int debug_source4 = source4;
+#endif
+
+				if (x.DoSourcePrefetch())
+					source.Prefetch(source_x, source_y, 64);
 
 				//get dest coordinates
-				const int dest_x = x.GetDest();
-				const int dest_y = y.GetDest();
+				const unsigned int dest_x = x.GetDest();
+				const unsigned int dest_y = y.GetDest();
 
+#ifdef DEBUG
 				unsigned char dest_r = dest.GetValue(dest_x, dest_y, kRed);
 				unsigned char dest_g = dest.GetValue(dest_x, dest_y, kGreen);
 				unsigned char dest_b = dest.GetValue(dest_x, dest_y, kBlue);
 				unsigned char dest_a = dest.GetValue(dest_x, dest_y, kAlpha);
+#endif
 
+				unsigned int dest4 = dest.GetValue4(dest_x, dest_y);
+
+#ifdef DEBUG
+				unsigned int debug_dest4 = dest4;
+				{
+					unsigned char dr, dg, db, da;
+					Mux<Dest::sm_format>::Separate(dest4, dr, dg, db, da);
+
+					if (Mux<Dest::sm_format>::GetOffset(kRed) != -1)
+						MY_ASSERT(dr == dest_r);
+					if (Mux<Dest::sm_format>::GetOffset(kGreen) != -1)
+						MY_ASSERT(dg == dest_g);
+					if (Mux<Dest::sm_format>::GetOffset(kBlue) != -1)
+						MY_ASSERT(db == dest_b);
+					if (Mux<Dest::sm_format>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(da == dest_a);
+				}
+#endif
+
+				dest.Prefetch(dest_x, dest_y, 64);
+
+#ifdef DEBUG
+				{
+					unsigned char sr, sg, sb, sa;
+					Mux<Source::sm_format>::Separate(source4, sr, sg, sb, sa);
+
+					if (Mux<Source::sm_format>::GetOffset(kRed) != -1)
+						MY_ASSERT(sr == source_r);
+					if (Mux<Source::sm_format>::GetOffset(kGreen) != -1)
+						MY_ASSERT(sg == source_g);
+					if (Mux<Source::sm_format>::GetOffset(kBlue) != -1)
+						MY_ASSERT(sb == source_b);
+					if (Mux<Source::sm_format>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(sa == source_a);
+				}
+#endif
+
+				if (mask4 != 255)
+					source4 = InOp<unsigned char, Source::sm_format, Mask::sm_format, Mux<Source::sm_format>::sm_formatPlusAlpha>::Op4(source4, mask4);
+
+#ifdef DEBUG
 				if (mask_pixel != 255)
 				{
 					source_r = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_r, mask_pixel);
@@ -1242,16 +1403,49 @@ public:
 					source_a = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_a, mask_pixel);
 				}
 
-				unsigned char final_r = AddOp<unsigned char>::Op(dest_r, source_r);
-				unsigned char final_g = AddOp<unsigned char>::Op(dest_g, source_g);
-				unsigned char final_b = AddOp<unsigned char>::Op(dest_b, source_b);
-				unsigned char final_a = AddOp<unsigned char>::Op(dest_a, source_a);
+				{
+					unsigned char vr, vg, vb, va;
+					Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::Separate(source4, vr, vg, vb, va);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kRed) != -1)
+						MY_ASSERT(vr == source_r);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kGreen) != -1)
+						MY_ASSERT(vg == source_g);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kBlue) != -1)
+						MY_ASSERT(vb == source_b);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(va == source_a);
+				}
+
+				unsigned char final_r = AddOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(dest_r, source_r);
+				unsigned char final_g = AddOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(dest_g, source_g);
+				unsigned char final_b = AddOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(dest_b, source_b);
+				unsigned char final_a = AddOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(dest_a, source_a);
+#endif
+
+				dest4 = AddOp<unsigned char, Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::sm_formatPlusAlpha, Mask::sm_format, Dest::sm_format>::Op4(source4, dest4);
+
+#ifdef DEBUG
+				{
+					unsigned char vr, vg, vb, va;
+					Mux<Dest::sm_format>::Separate(dest4, vr, vg, vb, va);
+					if (Mux<Dest::sm_format>::GetOffset(kRed) != -1)
+						MY_ASSERT(vr == final_r);
+					if (Mux<Dest::sm_format>::GetOffset(kGreen) != -1)
+						MY_ASSERT(vg == final_g);
+					if (Mux<Dest::sm_format>::GetOffset(kBlue) != -1)
+						MY_ASSERT(vb == final_b);
+					if (Mux<Dest::sm_format>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(va == final_a);
+				}
+#endif
 
 				//write back to dest image
-				dest.SetValue(dest_x, dest_y, kRed, final_r);
-				dest.SetValue(dest_x, dest_y, kGreen, final_g);
-				dest.SetValue(dest_x, dest_y, kBlue, final_b);
-				dest.SetValue(dest_x, dest_y, kAlpha, final_a);
+//				dest.SetValue(dest_x, dest_y, kRed, final_r);
+//				dest.SetValue(dest_x, dest_y, kGreen, final_g);
+//				dest.SetValue(dest_x, dest_y, kBlue, final_b);
+//				dest.SetValue(dest_x, dest_y, kAlpha, final_a);
+
+				dest.SetValue4(dest_x, dest_y, dest4);
 			}
 		}
 	}
@@ -1263,13 +1457,13 @@ template <class Operation,
 	PixelFormat DestPf,
 	PixelFormat MaskPf,
 	bool ValidMask>
-inline void Op(CompositeOp *pOp, int numOps,
-		unsigned char *pSource, unsigned char *pDest, unsigned char *pMask,
-		int source_stride, int dest_stride, int mask_stride,
-		int source_width, int source_height,
-		int source_wrap)
+inline void Op(CompositeOp *pOp, const unsigned int numOps,
+		unsigned char * __restrict pSource, unsigned char * __restrict pDest, unsigned char * __restrict pMask,
+		const unsigned int source_stride, const unsigned int dest_stride, const unsigned int mask_stride,
+		const unsigned int source_width, const unsigned int source_height,
+		const unsigned int source_wrap)
 {
-	for (int count = 0; count < numOps; count++)
+	for (unsigned int count = 0; count < numOps; count++)
 	{
 		VaryingValue<unsigned char, SourcePf, 255> source(pSource, pOp[count].srcX, pOp[count].srcY, source_stride);
 		VaryingValue<unsigned char, DestPf, 255> dest(pDest, pOp[count].dstX, pOp[count].dstY, dest_stride);

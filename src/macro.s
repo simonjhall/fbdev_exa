@@ -6,3 +6,7 @@
 	uxtb16 \a,\c, ror \b
 .endm
 
+.macro qadd a,b,c
+	uqadd8 \a,\b,\c
+.endm
+

@@ -83,11 +83,11 @@ enum Axis
 };
 
 //function pointer for the thing that'll do our work
-typedef void(*ptr2PdFunc)(struct CompositeOp *pOp, int numOps,
+typedef void(*ptr2PdFunc)(struct CompositeOp *pOp, const unsigned int numOps,
 		unsigned char *pSource, unsigned char *pDest, unsigned char *pMask,
-		int source_stride, int dest_stride, int mask_stride,
-		int source_width, int source_height,
-		int source_wrap);
+		const unsigned int source_stride, const unsigned int dest_stride, const unsigned int mask_stride,
+		const unsigned int source_width, const unsigned int source_height,
+		const unsigned int source_wrap);
 
 #ifdef __cplusplus
 extern "C" {
