@@ -25,6 +25,7 @@ struct CopyDetails
 	int m_syncPoint;
 } g_copyDetails;
 
+
 Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 		int dy, int alu, Pixel planemask)
 {
@@ -85,6 +86,11 @@ Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 	g_copyDetails.m_dy = dy;
 	g_copyDetails.m_bpp = pDstPixmap->drawable.bitsPerPixel / 8;
 
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
+
 	return TRUE;
 }
 
@@ -101,6 +107,11 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 	unsigned long srcPitch, dstPitch;
 	srcPitch = exaGetPixmapPitch(g_copyDetails.m_pSrc);
 	dstPitch = exaGetPixmapPitch(g_copyDetails.m_pDst);
+
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
 
 
 	//perform the copy as single lines
@@ -134,18 +145,30 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 				srcPitch - width * g_copyDetails.m_bpp);
 	}
 
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
 }
 
 void DoneCopy(PixmapPtr p)
 {
 	MY_ASSERT(g_copyDetails.m_pDst == p);
 
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
+
 	if (IsPendingUnkicked())
 	{
-		exaMarkSync(g_copyDetails.m_pDst->drawable.pScreen);
-
 		if (StartDma(GetUnkickedDmaHead(), FALSE))
 			UpdateKickedDmaHead();
 	}
+
+	//there may be nothing pending, as work may have been kicked when
+	//trying to allocate a block
+	//todo to a count to see if Copy was actually called
+	exaMarkSync(g_copyDetails.m_pDst->drawable.pScreen);
 }
 

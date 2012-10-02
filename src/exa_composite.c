@@ -87,6 +87,11 @@ Bool PrepareComposite(int op, PicturePtr pSrcPicture,
 
 		return FALSE;
 	}
+//	else
+//		fprintf(stderr, "accept: op %d, format %08x/%08x/%08x\n",
+//				op,
+//				pSrcPicture->format, pDstPicture->format,
+//				pMask ? pMaskPicture->format : 0);
 
 	//save some state necessary
 	g_pSrcPicture = pSrcPicture;
@@ -143,8 +148,9 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 	if (g_pendingOps == MAX_COMP_OPS)
 	{
 		fprintf(stderr, "max composite ops - flushing now\n");
-		exaWaitSync(pDst->drawable.pScreen);
-//		WaitMarker(GetScreen(), 0);
+
+		//this needs to happen, nothing should be outstanding
+		WaitMarker(GetScreen(), 0);
 
 		MY_ASSERT(g_pCompositor);
 		g_pCompositor(g_opList, g_pendingOps,
@@ -154,7 +160,7 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 				g_pSrcPicture->repeat);
 		g_pendingOps = 0;
 
-		exaMarkSync(pDst->drawable.pScreen);
+//		exaMarkSync(pDst->drawable.pScreen);
 	}
 }
 
@@ -162,12 +168,18 @@ void DoneComposite(PixmapPtr pDst)
 {
 	MY_ASSERT(pDst == g_pDst);
 
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
+
 	//if work to do
 	if (g_pendingOps)
 	{
-		//block on
-		exaWaitSync(pDst->drawable.pScreen);
-//		WaitMarker(GetScreen(), 0);
+		//block on the work stuff being done
+
+		//this needs to happen, nothing should be outstanding
+		WaitMarker(GetScreen(), 0);
 
 		MY_ASSERT(g_pCompositor);
 		g_pCompositor(g_opList, g_pendingOps,
@@ -176,7 +188,5 @@ void DoneComposite(PixmapPtr pDst)
 				g_pSrc->drawable.width, g_pSrc->drawable.height,
 				g_pSrcPicture->repeat);
 		g_pendingOps = 0;
-
-		exaMarkSync(pDst->drawable.pScreen);
 	}
 }

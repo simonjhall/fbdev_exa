@@ -134,6 +134,9 @@ void EmulateWaitDma(void);
 int RealDma(struct DmaControlBlock *);
 void RealWaitDma(unsigned int);
 
+//validation
+void ValidateCbList(struct DmaControlBlock *);
+
 /////////////////////////////////////
 
 //allocation of kernel (un-pagable) memory
@@ -150,5 +153,6 @@ int kern_dma_wait_all(unsigned int bytesPending);
 #define DEREFERENCE_TEST
 #define STRADDLE_TEST
 #define BREAK_PAGES
+#define CB_VALIDATION
 
 #endif

@@ -12,6 +12,8 @@
 #include "exa_acc.h"
 #include "exa_copylinear_copy2d.inl"
 
+//#define EMULATE_DMA
+
 /******** GENERIC STUFF ******/
 
 ScreenPtr g_pScreen = 0;
@@ -29,12 +31,12 @@ unsigned int g_totalBytesPendingUnforced = 0;
 BOOL g_headOfDma = TRUE;
 
 //stats
-unsigned int g_forcedWaits = 0;
-unsigned int g_unforcedWaits = 0;
-unsigned int g_forcedStarts = 0;
-unsigned int g_unforcedStarts = 0;
-unsigned int g_actualWaits = 0;
-unsigned int g_actualStarts = 0;
+unsigned int g_forcedWaits = 0;				//WaitDma forced to happen
+unsigned int g_unforcedWaits = 0;			//WaitDma not forced to happen
+unsigned int g_forcedStarts = 0;			//StartDma forced to start
+unsigned int g_unforcedStarts = 0;			//StartDma not forced to start
+unsigned int g_actualWaits = 0;				//amount of actual DMA waits
+unsigned int g_actualStarts = 0;			//amount of actual DMA kicks
 
 struct DmaControlBlock *g_pEmuCB = 0;
 
@@ -80,6 +82,27 @@ BOOL IsDmaPending(void)
 }
 
 /******* DMA ********/
+
+/**** validation ****/
+void ValidateCbList(struct DmaControlBlock *pCB)
+{
+	if (!pCB)
+		return;
+
+	while (pCB)
+	{
+		MY_ASSERT(pCB->m_transferInfo == pCB->m_transferInfo);
+
+		unsigned char *pSource = (unsigned char *)pCB->m_pSourceAddr;
+		unsigned char *pDest = (unsigned char *)pCB->m_pDestAddr;
+
+		MY_ASSERT(*(volatile unsigned char *)pSource == *(volatile unsigned char *)pSource);
+		MY_ASSERT(*(volatile unsigned char *)pDest == *(volatile unsigned char *)pDest);
+
+		pCB = pCB->m_pNext;
+	}
+}
+
 /**** starting ******/
 
 inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
@@ -104,7 +127,12 @@ inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
 
 		MY_ASSERT(g_pEmuCB == 0);
 		g_pEmuCB = pCB;
+#ifdef CB_VALIDATION
+		ValidateCbList(pCB);
+#endif
+#ifndef EMULATE_DMA
 		kern_dma_prepare_kick(pCB);
+#endif
 		g_actualStarts++;
 
 		return TRUE;
@@ -123,8 +151,11 @@ inline BOOL WaitDma(BOOL force)
 
 	if (force || (GetBytesPending() >= 8192))
 	{
+#ifdef EMULATE_DMA
+		EmulateWaitDma();
+#else
 		RealWaitDma(GetBytesPending());
-//		EmulateWaitDma();
+#endif
 		g_dmaPending = FALSE;
 
 		return TRUE;
@@ -138,6 +169,9 @@ inline void EmulateWaitDma(void)
 	if(IsDmaPending())
 	{
 		MY_ASSERT(g_pEmuCB);
+#ifdef CB_VALIDATION
+		ValidateCbList(g_pEmuCB);
+#endif
 		EmulateDma(g_pEmuCB);
 		g_pEmuCB = 0;
 
@@ -202,8 +236,8 @@ struct DmaControlBlock *AllocDmaBlock(void)
 			//pending is true
 		}
 
-		exaWaitSync(GetScreen());
-//		WaitMarker(GetScreen(), 0);
+		WaitMarker(GetScreen(), 0);				//this must happen
+
 		//head will be reset, but we need to clear it before the return
 		g_headOfDma = FALSE;
 		MY_ASSERT(g_dmaTail == 0);

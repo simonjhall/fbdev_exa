@@ -11,11 +11,11 @@ int EmulateDma(struct DmaControlBlock *pCB)
 {
 	int dmas = 0;
 
-#ifdef DEREFERENCE_TEST
-	if (pCB->m_transferInfo == pCB->m_transferInfo);
-#endif
 	while (pCB)
 	{
+#ifdef DEREFERENCE_TEST
+		MY_ASSERT(pCB->m_transferInfo == pCB->m_transferInfo);
+#endif
 //		xf86DrvMsg(0, X_INFO, "dma block at %p\n", pCB);
 		//pick out the interesting fields from TI
 		unsigned int src_inc = (pCB->m_transferInfo >> 8) & 0x1;
@@ -26,8 +26,8 @@ int EmulateDma(struct DmaControlBlock *pCB)
 		unsigned char *pDest = (unsigned char *)pCB->m_pDestAddr;
 
 #ifdef DEREFERENCE_TEST
-		if (*pSource == *pSource);
-		if (*pDest == *pDest);
+		MY_ASSERT(*(volatile unsigned char *)pSource == *(volatile unsigned char *)pSource);
+		MY_ASSERT(*(volatile unsigned char *)pDest == *(volatile unsigned char *)pDest);
 #endif
 
 		if (td_mode)

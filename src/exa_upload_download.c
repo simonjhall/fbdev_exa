@@ -68,9 +68,15 @@ Bool DownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 	g_upDownloadDetails.m_pitch = dst_pitch;
 	g_upDownloadDetails.m_pImage = dst;
 
+	Download(&g_upDownloadDetails);
+
+	//mark as async work done
 	exaMarkSync(pSrc->drawable.pScreen);
 
-	Download(&g_upDownloadDetails);
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
 
 	if (StartDma(GetUnkickedDmaHead(), FALSE))
 		UpdateKickedDmaHead();
@@ -93,15 +99,18 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 	g_upDownloadDetails.m_pitch = src_pitch;
 	g_upDownloadDetails.m_pImage = src;
 
-	exaMarkSync(pDst->drawable.pScreen);
-
 	Upload(&g_upDownloadDetails);
+
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
 
 	if (StartDma(GetUnkickedDmaHead(), TRUE))
 		UpdateKickedDmaHead();
 
-	exaWaitSync(pDst->drawable.pScreen);			//seems be necessary
-//	WaitMarker(GetScreen(), 0);
+	WaitMarker(GetScreen(), 0);			//there's clearly something to wait on
+	//nothing pending here, so don't mark
 
 	return TRUE;
 }

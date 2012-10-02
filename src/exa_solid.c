@@ -68,6 +68,11 @@ Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 	g_solidDetails.m_bpp = pPixmap->drawable.bitsPerPixel / 8;
 	g_solidDetails.m_toFill = fg;
 
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
+
 	return TRUE;
 }
 
@@ -78,6 +83,11 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 //	xf86DrvMsg(0, X_DEFAULT, "%s %p (%d,%d->%d,%d %dx%d)\n", __FUNCTION__, pPixmap,
 //			X1, Y1, X2, Y2,
 //			X2 - X1, Y2 - Y1);
+
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
 
 	unsigned char *pDst = exaGetPixmapAddress(g_solidDetails.m_pDst);
 	unsigned long dstPitch = exaGetPixmapPitch(g_solidDetails.m_pDst);
@@ -96,6 +106,11 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 	{
 		fprintf(stderr, "unable to allocate solid space - kicking and waiting\n");
 
+#ifdef CB_VALIDATION
+		if (IsPendingUnkicked())
+			ValidateCbList(GetUnkickedDmaHead());
+#endif
+
 		//there could be non-committed work taking up all the solid
 		if (IsPendingUnkicked())
 		{
@@ -109,8 +124,10 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 
 		//it could be something already enqueued taking it
 		if (IsDmaPending())
-			exaWaitSync(g_solidDetails.m_pDst->drawable.pScreen);
-//			WaitMarker(GetScreen(), 0);
+		{
+			//if something's pending then we should wait
+			WaitMarker(GetScreen(), 0);
+		}
 
 		//or simply we simply haven't reset it yet after past work
 		ResetSolidBuffer();
@@ -160,18 +177,29 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 			height,					//height
 			dstPitch - bpp * width);//dest stride
 
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
 }
 
 void DoneSolid(PixmapPtr p)
 {
 	MY_ASSERT(g_solidDetails.m_pDst == p);
 
+#ifdef CB_VALIDATION
+	if (IsPendingUnkicked())
+		ValidateCbList(GetUnkickedDmaHead());
+#endif
+
 	if (IsPendingUnkicked())
 	{
 		//give it a sync point (for future work)
-		exaMarkSync(g_solidDetails.m_pDst->drawable.pScreen);
 
 		if (StartDma(GetUnkickedDmaHead(), FALSE))
 			UpdateKickedDmaHead();
 	}
+
+	//work may have been kicked during Solid, yet nothing is pending
+	exaMarkSync(g_solidDetails.m_pDst->drawable.pScreen);
 }
