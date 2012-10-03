@@ -8,11 +8,13 @@ template <typename Derived>
 class MuxBase
 {
 public:
+	//get the byte offset of a given channel
 	static inline int GetOffset(const Channel c)
 	{
 		return Derived::GetOffset_(c);
 	}
 
+	//combined a number of different channels into the appropriate order
 	static inline void Combine(unsigned int &out,
 			const unsigned char &red, const unsigned char &green, const unsigned char &blue, const unsigned char &alpha)
 	{
@@ -34,6 +36,7 @@ public:
 			out |= (255 << (Derived::sm_alphaOffsetAt * 8));
 	}
 
+	//separate a packed value into the appropriate colour values
 	static inline void Separate(const unsigned int &in,
 			unsigned char &red, unsigned char &green, unsigned char &blue, unsigned char &alpha)
 	{
@@ -55,10 +58,13 @@ public:
 	}
 
 
+	//number of packed channels
 	static const unsigned int sm_numChannels = 0;
+	//static: the offset of the alpha channel
 	static const unsigned int sm_alphaOffsetAt = 0;
 };
 
+//unused generic class
 template <PixelFormat pf>
 class Mux : public MuxBase<Mux<pf> >
 {
@@ -79,6 +85,7 @@ class Mux<kA8> : public MuxBase<Mux<kA8> >
 			return 0;
 		else
 		{
+			//invalid for all others
 			return -1;
 		}
 	}
@@ -196,6 +203,7 @@ class Mux<kX8B8G8R8> : public MuxBase<Mux<kX8B8G8R8> >
 template <PixelFormat SourcePf, PixelFormat DestPf>
 static inline unsigned int Rotate(const unsigned int &in)
 {
+	//generic code
 	if (SourcePf != DestPf)
 	{
 		unsigned int out;
@@ -297,6 +305,7 @@ inline unsigned int Rotate<kX8B8G8R8, kA8R8G8B8>(const unsigned int &in)
 }
 /////////////////////////////////////
 
+//these are in one place so we can actually implement them via an external asm macro
 #ifdef __arm__
 inline unsigned int __uxtab16(unsigned int a, unsigned int b, unsigned int ror)
 {
@@ -317,6 +326,7 @@ inline unsigned int __uqadd8(unsigned int a, unsigned int b)
 
 #else
 
+//implementations for when coding on PC
 inline unsigned int __uxtab16(unsigned int a, unsigned int b, unsigned int ror)
 {
 	unsigned int ror_b = b;
@@ -413,15 +423,20 @@ public:
 	static inline unsigned int Op4(const unsigned int a, const unsigned int b);
 };
 
+
 template <PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class InOp<unsigned char, SourcePf, MaskPf, DestPf>
 {
 public:
 	static inline unsigned char Op(const unsigned char a, const unsigned char b)
 	{
+		//add and round
 		unsigned short result = (unsigned short)a * (unsigned short)b + 128;
+
+		//divide by 255
 		result = (result + (result >> 8)) >> 8;
 
+		//clamp
 		if (result > 255)
 			result = 255;
 
@@ -448,16 +463,20 @@ public:
 		return output;
 
 #else
+		//rotate a to fit the pf of the destination
 		unsigned int rebuilt_a;
 		rebuilt_a = Rotate<SourcePf, DestPf>(a);
 
+		//get the alpha of b
 		unsigned char ba;
 		if (Mux<MaskPf>::GetOffset(kAlpha) == -1)
 			ba = 255;
 		else
 			ba = (b >> (Mux<MaskPf>::GetOffset(kAlpha) * 8)) & 0xff;
 
+		//get two channels of the source
 		unsigned int a_low = rebuilt_a & 0x00ff00ff;
+		//the other two channels of the source
 		unsigned int a_high = (rebuilt_a >> 8) & 0x00ff00ff;
 
 		//source * alpha + 128
@@ -476,12 +495,15 @@ public:
 	}
 };
 
+
 template <class T, PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class AddOp
 {
 public:
 	static inline T Op(const T a, const T b);
+	static inline unsigned int Op4(const unsigned int a, const unsigned int b);
 };
+
 
 template <PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class AddOp<unsigned char, SourcePf, MaskPf, DestPf>
@@ -489,6 +511,7 @@ class AddOp<unsigned char, SourcePf, MaskPf, DestPf>
 public:
 	static inline unsigned char Op(const unsigned char a, const unsigned char b)
 	{
+		//just add and clamp
 		unsigned short result = (unsigned short)a + (unsigned short)b;
 
 		if (result > 255)
@@ -516,19 +539,25 @@ public:
 		Mux<DestPf>::Combine(output, rr, rg, rb, ra);
 		return output;
 #else
+		//rotate a to fit destination
 		unsigned int rebuilt_a;
 		rebuilt_a = Rotate<SourcePf, DestPf>(a);
+
+		//add and clamp
 		return __uqadd8(b, rebuilt_a);
 #endif
 	}
 };
+
 
 template <class T, PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class OverOp
 {
 public:
 	static inline T Op(const T a, const T b, const T one_minus_alpha);
+	static inline unsigned int Op4(const unsigned int a, const unsigned int b, const unsigned int one_minus_alpha);
 };
+
 
 template <PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class OverOp<unsigned char, SourcePf, MaskPf, DestPf>
@@ -536,12 +565,15 @@ class OverOp<unsigned char, SourcePf, MaskPf, DestPf>
 public:
 	static inline unsigned char Op(const unsigned char a, const unsigned char b, const unsigned char one_minus_alpha)
 	{
+		//multiply and round b by 1-alpha
 		unsigned short result = ((unsigned short)b * (unsigned short)one_minus_alpha + 128);
+		//divide by 255
 		result = (result + (result >> 8)) >> 8;
 
+		//add a
 		result += a;
 
-
+		//clamp
 		if (result > 255)
 			result = 255;
 
@@ -567,9 +599,11 @@ public:
 		Mux<DestPf>::Combine(output, rr, rg, rb, ra);
 		return output;
 #else
+		//rebuilt a to fit destination pf
 		unsigned int rebuilt_a;
 		rebuilt_a = Rotate<SourcePf, DestPf>(a);
 
+		//get two channels at a time (in 16 hwords)
 		unsigned int b_low = b & 0x00ff00ff;
 		unsigned int b_high = (b >> 8) & 0x00ff00ff;
 
@@ -585,6 +619,8 @@ public:
 		b_high = __uxtb16(b_high, 8);
 
 		unsigned int combined = b_low | (b_high << 8);
+
+		//add a and saturate
 		return __uqadd8(combined, rebuilt_a);
 #endif
 	}
@@ -632,17 +668,20 @@ public:
 	{
 	}
 
+	//get X and wrap it (slow)
 	inline int GetX(int x) const
 	{
 		return Wrap(x, m_width);
 	};
 
+	//get Y and wrap it (slow)
 	inline int GetY(int y) const
 	{
 		return Wrap(y, m_height);
 	};
 
 	////////////////
+	//increment X and wrap if appropriate
 	inline int GetXStep(int x) const
 	{
 		x++;
@@ -653,11 +692,14 @@ public:
 		return x;
 	};
 
+	//increment Y and wrap if appropriate
 	inline int GetYStep(int y) const
 	{
 		y++;
+
 		if (y >= m_height)
 			y -= m_height;
+
 		return y;
 	};
 
@@ -673,7 +715,7 @@ private:
 	int m_height;
 };
 
-//passthrough
+//pass through the coordinates
 class NormalSourceCoord
 {
 public:
@@ -693,6 +735,7 @@ public:
 		return static_cast<const Derived *>(this)->GetValue_(x, y, c);
 	}
 
+	//get a four pixel value (filled in with 255 at invalid channels)
 	inline unsigned int GetValue4(int x, int y) const
 	{
 		return static_cast<const Derived *>(this)->GetValue4_(x, y);
@@ -710,6 +753,7 @@ public:
 		static_cast<Derived *>(this)->SetValue_(x, y, c, value);
 	}
 
+	//set a four pixel value (only the bottom byte if a one-channel image)
 	inline void SetValue4(int x, int y, unsigned int value)
 	{
 		static_cast<Derived *>(this)->SetValue4_(x, y, value);
@@ -772,8 +816,9 @@ public:
 		{
 			unsigned int value = m_pArray4[y * m_stride4 + x];
 
+			//fill in the alpha
 			if (Mux<pf>::GetOffset(kAlpha) == -1)
-				value = value | (255 << (Mux<pf>::sm_alphaOffsetAt * 8));
+				value = value | (alpha << (Mux<pf>::sm_alphaOffsetAt * 8));
 
 			return value;
 		}
@@ -796,13 +841,16 @@ public:
 	{
 		if (Mux<pf>::sm_numChannels == 1)
 		{
+			//take the bottom byte only
 			m_pArray[y * m_stride + x] = (unsigned char)value;
 		}
 		else
 		{
+			//I don't think this is required
 			if (Mux<pf>::GetOffset(kAlpha) == -1)
-				value = value | (255 << (Mux<pf>::sm_alphaOffsetAt * 8));
+				value = value | (alpha << (Mux<pf>::sm_alphaOffsetAt * 8));
 
+			//fixme to use array4
 			((unsigned int *)m_pArray)[y * (m_stride / Mux<pf>::sm_numChannels) + x] = value;
 		}
 	}
@@ -810,14 +858,21 @@ public:
 	inline int GetOffX_(void) const { return m_offX; };
 	inline int GetOffY_(void) const { return m_offY; };
 
+	//pixelformat of the buffer
 	static const PixelFormat sm_format = pf;
 
 private:
+	//both point to the same thing
 	T * const __restrict m_pArray;
 	unsigned int * const __restrict m_pArray4;
+
+	//x/y offset into the buffer
 	const unsigned int m_offX;
 	const unsigned int m_offY;
+
+	//stride in bytes
 	const unsigned int m_stride;
+	//stride in words
 	const unsigned int m_stride4;
 };
 
@@ -840,6 +895,7 @@ public:
 		return m_values[offset];
 	}
 
+	//this surely can't be right, although kA8 is the only one-channel image
 	inline unsigned int GetValue4_(int, int) const
 	{
 		MY_ASSERT(Mux<pf>::sm_numChannels == 1);
@@ -902,6 +958,7 @@ public:
 		return m_loop < m_maxLoop;
 	};
 
+	//returns if a source prefetch should be performed
 	inline bool DoSourcePrefetch(void) const
 	{
 		return static_cast<const Derived *>(this)->DoSourcePrefetch_();
@@ -911,7 +968,7 @@ protected:
 	const unsigned int m_maxLoop;
 	unsigned int m_loop;
 
-	//not necessary
+	//not necessary, delete me
 private:
 	inline unsigned int GetLoop(void) const
 	{
@@ -945,6 +1002,7 @@ public:
 	{
 	};
 
+	//clamp to zero (not zero + offset)
 	inline unsigned int GetSource_(void) const
 	{
 		return 0;
@@ -965,6 +1023,7 @@ public:
 		this->m_loop++;
 	};
 
+	//no point
 	inline bool DoSourcePrefetch_(void) const
 	{
 		return false;
@@ -987,6 +1046,7 @@ public:
 	{
 	};
 
+	//passthrough
 	inline unsigned int GetSource_(void) const
 	{
 		return this->m_loop + m_sourceOff;
@@ -1037,6 +1097,7 @@ public:
 
 	};
 
+	//source is updated manually, no need to add offset
 	inline unsigned int GetSource_(void) const
 	{
 		return m_sourceOff;
@@ -1103,6 +1164,7 @@ public:
 
 				mask.Prefetch(mask_x, mask_y, 64);
 
+				//get out if we don't have to bother
 #ifdef DEBUG
 				if (mask_pixel == 0)
 					continue;
@@ -1181,9 +1243,9 @@ public:
 				}
 #endif
 
+				//do the in, if worthwhile
 				if (mask4 != 255)
 					source4 = InOp<unsigned char, Source::sm_format, Mask::sm_format, Mux<Source::sm_format>::sm_formatPlusAlpha>::Op4(source4, mask4);
-
 
 #ifdef DEBUG
 				if (mask_pixel != 255)
@@ -1213,12 +1275,14 @@ public:
 				unsigned char final_a = OverOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_a, dest_a, 255 - source_a);
 #endif
 
+				//compute the alpha so we can do 1-
 				unsigned char sa;
 				if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kAlpha) == -1)
 					sa = 255;
 				else
 					sa = (source4 >> (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kAlpha) * 8)) & 0xff;
 
+				//do the over
 				dest4 = OverOp<unsigned char, Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::sm_formatPlusAlpha, Mask::sm_format, Dest::sm_format>::Op4(source4, dest4, sa ^ 255);
 #ifdef DEBUG
 				{
@@ -1463,25 +1527,33 @@ inline void Op(CompositeOp *pOp, const unsigned int numOps,
 		const unsigned int source_width, const unsigned int source_height,
 		const unsigned int source_wrap)
 {
+	//loop through each thing in the list
 	for (unsigned int count = 0; count < numOps; count++)
 	{
+		//really we don't want to have to rebuild these each time
+		//but we do need an offset for each one
+		//no sense in doing a "set offset()" function as then we'd have loop-carried deps
 		VaryingValue<unsigned char, SourcePf, 255> source(pSource, pOp[count].srcX, pOp[count].srcY, source_stride);
 		VaryingValue<unsigned char, DestPf, 255> dest(pDest, pOp[count].dstX, pOp[count].dstY, dest_stride);
 
+		//if there's a mask, then map it to memory
 		if (ValidMask)
 		{
 			VaryingValue<unsigned char, MaskPf, 255> mask(pMask, pOp[count].maskX, pOp[count].maskY, mask_stride);
 
+			//force to zero
 			if (source_width == 1 && source_height == 1)
 			{
 				const ZeroSourceCoord zero;
 				Operation::template Op(source, dest, mask, zero, pOp[count].width, pOp[count].height);
 			}
+			//wrap
 			else if (source_wrap)
 			{
 				const WrappedSourceCoord wrap(source_width, source_height);
 				Operation::template Op(source, dest, mask, wrap, pOp[count].width, pOp[count].height);
 			}
+			//passthrough
 			else
 			{
 				const NormalSourceCoord normal;
@@ -1489,8 +1561,9 @@ inline void Op(CompositeOp *pOp, const unsigned int numOps,
 			}
 
 		}
-		else
+		else	//else use a constant
 		{
+			//which we're hard-coding here as 255 (true?)
 			const unsigned char m = 255;
 			FixedValue<unsigned char, MaskPf> mask(&m);		//todo add compile-time assert here == 8 bit
 
