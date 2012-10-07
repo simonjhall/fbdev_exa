@@ -27,7 +27,7 @@ void ForwardCopy(unsigned char *pDst, unsigned char *pSrc, int bytes)
 #endif
 
 #ifdef BREAK_PAGES
-//	fprintf(stderr, "copy from %p->%p, %d bytes\n", pSrc, pDst, bytes);
+//	xf86DrvMsg(0, X_INFO, "copy from %p->%p, %d bytes\n", pSrc, pDst, bytes);
 	while (bytes)
 	{
 		//which one comes first
@@ -40,7 +40,7 @@ void ForwardCopy(unsigned char *pDst, unsigned char *pSrc, int bytes)
 		//nothing interesting
 		if (endOffset <= 4096)
 		{
-//			fprintf(stderr, "\tpart %d from %p->%p, %d bytes, %d to go, cb %p\n", __LINE__, pSrc, pDst, bytes, bytes, pCB);
+//			xf86DrvMsg(0, X_INFO, "\tpart %d from %p->%p, %d bytes, %d to go, cb %p\n", __LINE__, pSrc, pDst, bytes, bytes, pCB);
 			CopyLinear(pCB,
 					pDst,			//destination
 					pSrc,			//source
@@ -54,7 +54,7 @@ void ForwardCopy(unsigned char *pDst, unsigned char *pSrc, int bytes)
 		{	//and cap our max transfer to 4k
 			unsigned int to_copy = 4096 - pageOffset;
 
-//			fprintf(stderr, "\tpart %d from %p->%p, %d bytes, %d to go, cb %p\n", __LINE__, pSrc, pDst, to_copy, bytes, pCB);
+//			xf86DrvMsg(0, X_INFO, "\tpart %d from %p->%p, %d bytes, %d to go, cb %p\n", __LINE__, pSrc, pDst, to_copy, bytes, pCB);
 			CopyLinear(pCB,
 					pDst,
 					pSrc,
@@ -69,7 +69,7 @@ void ForwardCopy(unsigned char *pDst, unsigned char *pSrc, int bytes)
 		{
 			unsigned long to_copy = bytes - ((pageOffset + bytes) & 4095);
 
-//			fprintf(stderr, "\tpart %d from %p->%p, %d bytes, %d to go, cb %p\n", __LINE__, pSrc, pDst, to_copy, bytes, pCB);
+//			xf86DrvMsg(0, X_INFO, "\tpart %d from %p->%p, %d bytes, %d to go, cb %p\n", __LINE__, pSrc, pDst, to_copy, bytes, pCB);
 			CopyLinear(pCB,
 					pDst,
 					pSrc,

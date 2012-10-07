@@ -27,7 +27,7 @@ struct SolidDetails
 Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 		Pixel fg)
 {
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p\n", __FUNCTION__, pPixmap);
+//	xf86DrvMsg(0, X_INFO, "%s %p\n", __FUNCTION__, pPixmap);
 //	return FALSE;
 
 	//check it's a valid pointer
@@ -39,28 +39,28 @@ Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 
 	if (exaGetPixmapAddress(pPixmap) == 0)
 	{
-		xf86DrvMsg(0, X_WARNING, "%s dest %p\n", __FUNCTION__, exaGetPixmapAddress(pPixmap));
+		xf86DrvMsg(0, X_INFO, "%s dest %p\n", __FUNCTION__, exaGetPixmapAddress(pPixmap));
 		return FALSE;
 	}
 
 	//check it's either 8/16/24/32
 	if (pPixmap->drawable.bitsPerPixel & 7)
 	{
-		xf86DrvMsg(0, X_WARNING, "%s pPixmap->drawable.bitsPerPixel & 7\n", __FUNCTION__);
+		xf86DrvMsg(0, X_INFO, "%s pPixmap->drawable.bitsPerPixel & 7\n", __FUNCTION__);
 		return FALSE;
 	}
 
 	//need a solid plane mask
 	if (!EXA_PM_IS_SOLID(&pPixmap->drawable, planemask))
 	{
-		xf86DrvMsg(0, X_WARNING, "%s !EXA_PM_IS_SOLID\n", __FUNCTION__);
+		xf86DrvMsg(0, X_INFO, "%s !EXA_PM_IS_SOLID\n", __FUNCTION__);
 		return FALSE;
 	}
 
 	//check that it's a copy operation
 	if (alu != GXcopy)
 	{
-		xf86DrvMsg(0, X_WARNING, "%s alu != GXcopy\n", __FUNCTION__);
+		xf86DrvMsg(0, X_INFO, "%s alu != GXcopy\n", __FUNCTION__);
 		return FALSE;
 	}
 
@@ -80,7 +80,7 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 {
 	MY_ASSERT(pPixmap == g_solidDetails.m_pDst);
 
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p (%d,%d->%d,%d %dx%d)\n", __FUNCTION__, pPixmap,
+//	xf86DrvMsg(0, X_INFO, "%s %p (%d,%d->%d,%d %dx%d)\n", __FUNCTION__, pPixmap,
 //			X1, Y1, X2, Y2,
 //			X2 - X1, Y2 - Y1);
 
@@ -104,7 +104,7 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 	//get some solid space
 	while (!(pSolid = AllocSolidBuffer(32)))
 	{
-		fprintf(stderr, "unable to allocate solid space - kicking and waiting\n");
+		xf86DrvMsg(0, X_INFO, "unable to allocate solid space - kicking and waiting\n");
 
 #ifdef CB_VALIDATION
 		if (IsPendingUnkicked())

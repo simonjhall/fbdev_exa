@@ -32,6 +32,8 @@ BOOL IsDmaPending(void);
 ////////////////////////////////////
 //driver exa functions
 void *GetMemoryBase(void);
+void FreeMemoryBase(void);
+void SetMemorySize(unsigned long);
 unsigned long GetMemorySize(void);
 ScreenPtr GetScreen(void);
 void SetScreen(ScreenPtr);
@@ -104,6 +106,8 @@ Bool PixmapIsOffscreen(PixmapPtr pPix);
 Bool ModifyPixmapHeader(PixmapPtr pPixmap, int width, int height,
                                 int depth, int bitsPerPixel, int devKind,
                                 pointer pPixData);
+//end not working
+////////////////
 
 struct DmaPixmap
 {
@@ -137,10 +141,14 @@ void RealWaitDma(unsigned int);
 //validation
 void ValidateCbList(struct DmaControlBlock *);
 
+//misc
+void BenchCopy(void);
+
 /////////////////////////////////////
 
 //allocation of kernel (un-pagable) memory
 void *kern_alloc(size_t);
+void *kern_free(void *);
 
 //internal kernel dma control
 int kern_dma_prepare(void *);
@@ -150,9 +158,9 @@ int kern_dma_prepare_kick(void *ptr);
 int kern_dma_wait_one(void *);
 int kern_dma_wait_all(unsigned int bytesPending);
 
-#define DEREFERENCE_TEST
-#define STRADDLE_TEST
+//#define DEREFERENCE_TEST
+//#define STRADDLE_TEST
 #define BREAK_PAGES
-#define CB_VALIDATION
+//#define CB_VALIDATION
 
 #endif

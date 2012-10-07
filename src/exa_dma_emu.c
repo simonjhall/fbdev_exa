@@ -84,19 +84,26 @@ int EmulateDma(struct DmaControlBlock *pCB)
 //			xf86DrvMsg(0, X_INFO, "\t%p->%p (%d bytes (%d))\n",
 //					pSource, pDest, length, src_inc);
 
-			int count;
-			for (count = 0; count < length; count++)
+			if (!src_inc)
 			{
-				*pDest = *pSource;
-				pDest++;
-				pSource++;
-				source_offset++;
-
-				if (!src_inc && source_offset == 4)
+				int count;
+				for (count = 0; count < length; count++)
 				{
-					source_offset = 0;
-					pSource -= 4;
+					*pDest = *pSource;
+					pDest++;
+					pSource++;
+					source_offset++;
+
+					if (source_offset == 4)
+					{
+						source_offset = 0;
+						pSource -= 4;
+					}
 				}
+			}
+			else
+			{
+				memcpy(pDest, pSource, length);
 			}
 		}
 

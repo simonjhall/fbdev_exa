@@ -28,11 +28,11 @@ static inline void CopyLinear(struct DmaControlBlock *pCB,
 			unsigned long source_page_end;
 			unsigned long new_length_source;
 
-			xf86DrvMsg(0, X_INFO, "linear source range straddles page boundary %p->%p, %lx->%lx\n",
+			xf86DrvMsg(0, X_WARNING, "linear source range straddles page boundary %p->%p, %lx->%lx\n",
 					pSourceAddr, pSourceAddr + length, source_start, source_end);
 
 			if (source_end - source_start > 1)
-				xf86DrvMsg(0, X_INFO, "\tstraddles %ld pages\n", source_end - source_start);
+				xf86DrvMsg(0, X_WARNING, "\tstraddles %ld pages\n", source_end - source_start);
 		}
 	}
 
@@ -41,11 +41,11 @@ static inline void CopyLinear(struct DmaControlBlock *pCB,
 
 	if (dest_start != dest_end)
 	{
-		xf86DrvMsg(0, X_INFO, "linear dest range straddles page boundary %p->%p, %lx->%lx\n",
+		xf86DrvMsg(0, X_WARNING, "linear dest range straddles page boundary %p->%p, %lx->%lx\n",
 				pDestAddr, pDestAddr + length, dest_start, dest_end);
 
 		if (dest_end - dest_start > 1)
-				xf86DrvMsg(0, X_INFO, "\tstraddles %ld pages\n", dest_end - dest_start);
+				xf86DrvMsg(0, X_WARNING, "\tstraddles %ld pages\n", dest_end - dest_start);
 	}
 #endif
 
@@ -96,13 +96,13 @@ static inline void Copy2D(struct DmaControlBlock *pCB,
 
 		if (source_start != source_end)
 		{
-			xf86DrvMsg(0, X_INFO, "2D source range straddles page boundary %p->%p, %lx->%lx, %dx%d (+%d)\n",
+			xf86DrvMsg(0, X_WARNING, "2D source range straddles page boundary %p->%p, %lx->%lx, %dx%d (+%d)\n",
 					pSourceAddr, pSourceAddr + (xlength + sourceStride) * ylength,
 					source_start, source_end,
 					xlength, ylength, sourceStride);
 
 			if (source_end - source_start > 1)
-				xf86DrvMsg(0, X_INFO, "\tstraddles %ld pages\n", source_end - source_start);
+				xf86DrvMsg(0, X_WARNING, "\tstraddles %ld pages\n", source_end - source_start);
 		}
 	}
 
@@ -111,13 +111,13 @@ static inline void Copy2D(struct DmaControlBlock *pCB,
 
 	if (dest_start != dest_end)
 	{
-		xf86DrvMsg(0, X_INFO, "2D dest range straddles page boundary %p->%p, %lx->%lx, %dx%d (+%d)\n",
+		xf86DrvMsg(0, X_WARNING, "2D dest range straddles page boundary %p->%p, %lx->%lx, %dx%d (+%d)\n",
 				pDestAddr, pDestAddr + (xlength + destStride) * ylength,
 				dest_start, dest_end,
 				xlength, ylength, destStride);
 
 		if (dest_end - dest_start > 1)
-				xf86DrvMsg(0, X_INFO, "\tstraddles %ld pages\n", dest_end - dest_start);
+				xf86DrvMsg(0, X_WARNING, "\tstraddles %ld pages\n", dest_end - dest_start);
 	}
 #endif
 

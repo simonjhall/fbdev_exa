@@ -57,7 +57,7 @@ Bool DownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 		char *dst, int dst_pitch)
 {
 //	return FALSE;
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p->%p (%d, %d %dx%d)\n", __FUNCTION__, pSrc, dst, x, y, w, h);
+//	xf86DrvMsg(0, X_INFO, "%s %p->%p (%d, %d %dx%d)\n", __FUNCTION__, pSrc, dst, x, y, w, h);
 
 	g_upDownloadDetails.m_up = FALSE;
 	g_upDownloadDetails.m_pPixmap = pSrc;
@@ -88,7 +88,7 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 		char *src, int src_pitch)
 {
 //	return FALSE;
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p<-%p (%d,%d %dx%d)\n", __FUNCTION__, pDst, src, x, y, w, h);
+//	xf86DrvMsg(0, X_INFO, "%s %p<-%p (%d,%d %dx%d)\n", __FUNCTION__, pDst, src, x, y, w, h);
 
 	g_upDownloadDetails.m_up = TRUE;
 	g_upDownloadDetails.m_pPixmap = pDst;

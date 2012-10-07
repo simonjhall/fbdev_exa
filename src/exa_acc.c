@@ -4,6 +4,7 @@
 
 #include <string.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include "xf86.h"
 #include "fb.h"
@@ -101,6 +102,38 @@ void ValidateCbList(struct DmaControlBlock *pCB)
 
 		pCB = pCB->m_pNext;
 	}
+}
+
+void BenchCopy(void)
+{
+	struct timeval start, stop;
+
+	MY_ASSERT(IsPendingUnkicked() == FALSE);
+	MY_ASSERT(IsDmaPending() == FALSE);
+
+	unsigned long size = GetMemorySize() / 2;
+	if (size > 14 * 1024 * 1024)
+		size = 14 * 1024 * 1024;
+//	unsigned long size = 4096;
+
+	ForwardCopy(GetMemoryBase() + size, GetMemoryBase(), size);
+
+	MY_ASSERT(IsPendingUnkicked());
+	MY_ASSERT(IsDmaPending() == FALSE);
+
+	gettimeofday(&start, 0);
+	StartDma(GetUnkickedDmaHead(), TRUE);
+	UpdateKickedDmaHead();
+
+	MY_ASSERT(IsDmaPending());
+
+	WaitDma(TRUE);
+	gettimeofday(&stop, 0);
+
+	xf86DrvMsg(0, X_INFO, "DMA copy at %.2f MB/s (%.2f MB in %d us)\n",
+			(float)size / 1048576 / ((double)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)) / 1000000),
+			(float)size / 1048576,
+			(int)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)));
 }
 
 /**** starting ******/
@@ -259,7 +292,7 @@ unsigned char *AllocSolidBuffer(unsigned int bytes)
 
 	if (g_solidOffset + bytes >= solid_size)
 	{
-		fprintf(stderr, "ran out of solid space...hopefully flushing\n");
+		xf86DrvMsg(0, X_INFO, "ran out of solid space...hopefully flushing\n");
 		return 0;
 	}
 
@@ -287,8 +320,8 @@ void SetScreen(ScreenPtr p)
 
 /******** EXA ********/
 
-static CARD8 *g_pOffscreenBase;
-static unsigned long g_offscreenSize;
+static CARD8 *g_pOffscreenBase = 0;
+static unsigned long g_offscreenSize = 0;
 
 void *GetMemoryBase(void)
 {
@@ -296,7 +329,7 @@ void *GetMemoryBase(void)
 	if (!run)
 	{
 		run = 1;
-		g_offscreenSize = 12 * 1024 * 1024;
+		MY_ASSERT(g_offscreenSize >= 1048576);				//realistically you need more like >4MB
 		g_pOffscreenBase = kern_alloc(g_offscreenSize);
 
 		MY_ASSERT(g_pOffscreenBase);
@@ -308,9 +341,26 @@ void *GetMemoryBase(void)
 	return g_pOffscreenBase;
 }
 
+void FreeMemoryBase(void)
+{
+	if (g_pOffscreenBase)
+	{
+		g_pOffscreenBase = kern_free(g_pOffscreenBase);
+		MY_ASSERT(!g_pOffscreenBase);
+	}
+}
+
 unsigned long GetMemorySize(void)
 {
 	return g_offscreenSize;
+}
+
+void SetMemorySize(unsigned long s)
+{
+	if (!g_pOffscreenBase)
+		g_offscreenSize = s;
+
+	MY_ASSERT(!g_pOffscreenBase);
 }
 
 int MarkSync(ScreenPtr pScreen)
@@ -321,7 +371,7 @@ int MarkSync(ScreenPtr pScreen)
 
 void WaitMarker(ScreenPtr pScreen, int Marker)
 {
-	time_t start = clock();
+//	time_t start = clock();
 
 //	static int dmas = 0;
 	//int kick = RunDma(g_pDmaBuffer);
@@ -347,7 +397,7 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 	if (g_actualStarts - last_starts > 1000)
 	{
 		last_starts = g_actualStarts;
-		fprintf(stderr, "actual s/w %d %d, forced s/w %d %d, unforced s/w %d %d, average kick %d %d bytes\n",
+		xf86DrvMsg(0, X_INFO, "actual s/w %d %d, forced s/w %d %d, unforced s/w %d %d, average kick %d %d bytes\n",
 				g_actualStarts, g_actualWaits, g_forcedStarts, g_forcedWaits, g_unforcedStarts, g_unforcedWaits,
 				g_totalBytesPendingForced / g_forcedStarts, g_totalBytesPendingUnforced / g_unforcedStarts);
 	}

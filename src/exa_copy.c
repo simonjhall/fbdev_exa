@@ -29,7 +29,7 @@ struct CopyDetails
 Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 		int dy, int alu, Pixel planemask)
 {
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p->%p\n", __FUNCTION__, pSrcPixmap, pDstPixmap);
+//	xf86DrvMsg(0, X_INFO, "%s %p->%p\n", __FUNCTION__, pSrcPixmap, pDstPixmap);
 //	return FALSE;
 
 	//check they're valid pointers

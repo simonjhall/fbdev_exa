@@ -44,6 +44,7 @@
 
 static Bool debug = 0;
 static Bool g_usingExa = FALSE;
+static Bool g_nullDriver = FALSE;
 
 #define TRACE_ENTER(str) \
     do { if (debug) ErrorF("fbdev: " str " %d\n",pScrn->scrnIndex); } while (0)
@@ -87,7 +88,7 @@ enum { FBDEV_ROTATE_NONE=0, FBDEV_ROTATE_CW=270, FBDEV_ROTATE_UD=180, FBDEV_ROTA
 static int pix24bpp = 0;
 
 #define FBDEV_VERSION		4000
-#define FBDEV_NAME		"FBDEV"
+#define FBDEV_NAME		"FBDEV_RPI"
 #define FBDEV_DRIVER_NAME	"fbdev"
 
 #ifdef XSERVER_LIBPCIACCESS
@@ -131,14 +132,18 @@ typedef enum {
 	OPTION_SHADOW_FB,
 	OPTION_ROTATE,
 	OPTION_FBDEV,
+	OPTION_ALLOC_BLOCK,
 	OPTION_DEBUG,
-	OPTION_ACCELMETHOD
+	OPTION_ACCELMETHOD,
+	OPTION_FAULT_IN_IMM
 } FBDevOpts;
 
 static const OptionInfoRec FBDevOptions[] = {
 	{ OPTION_SHADOW_FB,	"ShadowFB",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_ROTATE,	"Rotate",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_FBDEV,		"fbdev",	OPTV_STRING,	{0},	FALSE },
+	{ OPTION_ALLOC_BLOCK,	"AllocBlock",	OPTV_INTEGER,	{0},	FALSE },
+	{ OPTION_FAULT_IN_IMM,	"FaultInImm",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_DEBUG,		"debug",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_ACCELMETHOD,       "AccelMethod",  OPTV_STRING,    {0}, FALSE },
 	{ -1,			NULL,		OPTV_NONE,	{0},	FALSE }
@@ -491,13 +496,13 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 	xf86ProcessOptions(pScrn->scrnIndex, fPtr->pEnt->device->options, fPtr->Options);
 
 	/* use shadow framebuffer by default */
-	fPtr->shadowFB = xf86ReturnOptValBool(fPtr->Options, OPTION_SHADOW_FB, TRUE);
+	fPtr->shadowFB = 0;//xf86ReturnOptValBool(fPtr->Options, OPTION_SHADOW_FB, TRUE);
 
 	debug = xf86ReturnOptValBool(fPtr->Options, OPTION_DEBUG, FALSE);
 
 	/* rotation */
 	fPtr->rotate = FBDEV_ROTATE_NONE;
-	if ((s = xf86GetOptValString(fPtr->Options, OPTION_ROTATE)))
+	/*if ((s = xf86GetOptValString(fPtr->Options, OPTION_ROTATE)))
 	{
 	  if(!xf86NameCmp(s, "CW"))
 	  {
@@ -527,18 +532,43 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 	    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
 		       "valid options are \"CW\", \"CCW\" and \"UD\"\n");
 	  }
-	}
+	}*/
 
 	/****** EXA *******/
 	s = xf86GetOptValString(fPtr->Options, OPTION_ACCELMETHOD);
-	if (s && !xf86NameCmp(s, "EXA"))
+
+	if (!s)
+		g_usingExa = TRUE;
+	else if (s && !xf86NameCmp(s, "EXA"))
+		g_usingExa = TRUE;
+	else if (s && !xf86NameCmp(s, "EXA_NULL"))
+	{
+		g_usingExa = TRUE;
+		g_nullDriver = TRUE;
+	}
+
+	if (g_usingExa)
 	{
 		g_usingExa = TRUE;
 		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Using EXA acceleration\n");
 
+		if (g_nullDriver)
+			xf86DrvMsg(pScrn->scrnIndex, X_WARNING, "********USING NULL DRIVER EXPECT FULL SCREEN CORRUPTION - THIS IS INTENTIONAL********\n");
+
 		if (!xf86LoadSubModule(pScrn, "exa"))
 			return FALSE;
+
+		unsigned long buffer_size;
+		if (!xf86GetOptValULong(fPtr->Options, OPTION_ALLOC_BLOCK, &buffer_size))
+			buffer_size = 12 * 1024 * 1024;		//12 meg, why not
+
+		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Requesting %d bytes (%.2f MB) from the kernel as offscreen memory\n", buffer_size, (float)buffer_size / 1048576);
+		SetMemorySize(buffer_size);
 	}
+	else
+		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Acceleration disabled\n");
+
+
 	/******************/
 
 	/* select video modes */
@@ -885,52 +915,63 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 		pExa->maxX = 2048;
 		pExa->maxY = 2048;
 
-#ifdef NULL_DRIVER
-		pExa->WaitMarker = NullWaitMarker;
+		if (xf86ReturnOptValBool(fPtr->Options, OPTION_FAULT_IN_IMM, FALSE))
+		{
+			xf86DrvMsg(scrnIndex, X_CONFIG, "faulting in all offscreen memory now\n");
+			memset(GetMemoryBase(), 0xcd, GetMemorySize());
+		}
 
-		pExa->PrepareSolid = NullPrepareSolid;
-		pExa->Solid = NullSolid;
-		pExa->DoneSolid = NullDoneSolid;
+		BenchCopy();
 
-		pExa->PrepareCopy = NullPrepareCopy;
-		pExa->Copy = NullCopy;
-		pExa->DoneCopy = NullDoneCopy;
+		if (g_nullDriver)
+		{
+			pExa->WaitMarker = NullWaitMarker;
 
-		pExa->DownloadFromScreen = NullDownloadFromScreen;
-		pExa->UploadToScreen = NullUploadToScreen;
+			pExa->PrepareSolid = NullPrepareSolid;
+			pExa->Solid = NullSolid;
+			pExa->DoneSolid = NullDoneSolid;
 
-		pExa->CheckComposite = NullCheckComposite;
-		pExa->PrepareComposite = NullPrepareComposite;
-		pExa->Composite = NullComposite;
-		pExa->DoneComposite = NullDoneComposite;
-#else
-		pExa->WaitMarker = WaitMarker;
-//		pExa->MarkSync = MarkSync;
+			pExa->PrepareCopy = NullPrepareCopy;
+			pExa->Copy = NullCopy;
+			pExa->DoneCopy = NullDoneCopy;
 
-//		pExa->PrepareAccess = PrepareAccess;
-//		pExa->FinishAccess = FinishAccess;
-//
-//		pExa->CreatePixmap2 = CreatePixmap2;
-//		pExa->DestroyPixmap = DestroyPixmap;
-//		pExa->PixmapIsOffscreen = PixmapIsOffscreen;
-//		pExa->ModifyPixmapHeader = ModifyPixmapHeader;
+			pExa->DownloadFromScreen = NullDownloadFromScreen;
+			pExa->UploadToScreen = NullUploadToScreen;
 
-		pExa->PrepareSolid = PrepareSolid;
-		pExa->Solid = Solid;
-		pExa->DoneSolid = DoneSolid;
+			pExa->CheckComposite = NullCheckComposite;
+			pExa->PrepareComposite = NullPrepareComposite;
+			pExa->Composite = NullComposite;
+			pExa->DoneComposite = NullDoneComposite;
+		}
+		else
+		{
+			pExa->WaitMarker = WaitMarker;
+	//		pExa->MarkSync = MarkSync;
 
-		pExa->PrepareCopy = PrepareCopy;
-		pExa->Copy = Copy;
-		pExa->DoneCopy = DoneCopy;
+	//		pExa->PrepareAccess = PrepareAccess;
+	//		pExa->FinishAccess = FinishAccess;
+	//
+	//		pExa->CreatePixmap2 = CreatePixmap2;
+	//		pExa->DestroyPixmap = DestroyPixmap;
+	//		pExa->PixmapIsOffscreen = PixmapIsOffscreen;
+	//		pExa->ModifyPixmapHeader = ModifyPixmapHeader;
 
-		pExa->DownloadFromScreen = DownloadFromScreen;
-		pExa->UploadToScreen = UploadToScreen;
+			pExa->PrepareSolid = PrepareSolid;
+			pExa->Solid = Solid;
+			pExa->DoneSolid = DoneSolid;
 
-		pExa->CheckComposite = CheckComposite;
-		pExa->PrepareComposite = PrepareComposite;
-		pExa->Composite = Composite;
-		pExa->DoneComposite = DoneComposite;
-#endif
+			pExa->PrepareCopy = PrepareCopy;
+			pExa->Copy = Copy;
+			pExa->DoneCopy = DoneCopy;
+
+			pExa->DownloadFromScreen = DownloadFromScreen;
+			pExa->UploadToScreen = UploadToScreen;
+
+			pExa->CheckComposite = CheckComposite;
+			pExa->PrepareComposite = PrepareComposite;
+			pExa->Composite = Composite;
+			pExa->DoneComposite = DoneComposite;
+		}
 
 		pExa->exa_major = 2;
 		pExa->exa_minor = 5;
