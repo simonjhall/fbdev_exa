@@ -49,11 +49,17 @@ static inline void CopyLinear(struct DmaControlBlock *pCB,
 	}
 #endif
 
+	/*
+	 * Careful here regarding the AXI burst field. Going too high can deadlock the system or turn off the display.
+	 * With no source/dest increments channel zero can go as high as 13, with source and destination burst enabled.
+	 * Yet with source/dest inc enabled we can only get to 10.
+	 * Also other channels can only go up to 5, with source/dest burst disabled (unsure of how high it'll go with then enabled).
+	 */
 	pCB->m_transferInfo = (srcInc << 8);			//do source increment?
 	pCB->m_transferInfo |= (1 << 4);				//dest increment
-	pCB->m_transferInfo |= (5 << 12);				//axi burst
-	/*pCB->m_transferInfo |= (1 << 9);				//source burst
-	pCB->m_transferInfo |= (1 << 5);				//dest burst*/
+	pCB->m_transferInfo |= (10 << 12);				//axi burst
+	pCB->m_transferInfo |= (1 << 9);				//source burst
+	pCB->m_transferInfo |= (1 << 5);				//dest burst
 
 	pCB->m_pSourceAddr = pSourceAddr;
 	pCB->m_pDestAddr = pDestAddr;
