@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/mman.h>
 
 #include "xf86.h"
 #include "fb.h"
@@ -30,6 +31,7 @@ unsigned int g_bytesPending = 0;
 unsigned int g_totalBytesPendingForced = 0;
 unsigned int g_totalBytesPendingUnforced = 0;
 BOOL g_headOfDma = TRUE;
+unsigned int g_maxAxiBurst = 0;			//maximum axi burst suggested by the driver
 
 //stats
 unsigned int g_forcedWaits = 0;				//WaitDma forced to happen
@@ -114,7 +116,6 @@ void BenchCopy(void)
 	unsigned long size = GetMemorySize() / 2;
 	if (size > 14 * 1024 * 1024)
 		size = 14 * 1024 * 1024;
-//	unsigned long size = 4096;
 
 	ForwardCopy(GetMemoryBase() + size, GetMemoryBase(), size);
 
@@ -129,6 +130,11 @@ void BenchCopy(void)
 
 	WaitDma(TRUE);
 	gettimeofday(&stop, 0);
+
+	//reset the dma system
+	g_dmaTail = 0;
+	g_dmaUnkickedHead = 0;
+	g_headOfDma = TRUE;
 
 	xf86DrvMsg(0, X_INFO, "DMA copy at %.2f MB/s (%.2f MB in %d us)\n",
 			(float)size / 1048576 / ((double)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)) / 1000000),
@@ -323,6 +329,8 @@ void SetScreen(ScreenPtr p)
 static CARD8 *g_pOffscreenBase = 0;
 static unsigned long g_offscreenSize = 0;
 
+static FILE *dev_mem_file = 0;
+
 void *GetMemoryBase(void)
 {
 	static int run = 0;
@@ -330,9 +338,27 @@ void *GetMemoryBase(void)
 	{
 		run = 1;
 		MY_ASSERT(g_offscreenSize >= 1048576);				//realistically you need more like >4MB
-		g_pOffscreenBase = kern_alloc(g_offscreenSize);
+
+//		g_pOffscreenBase = kern_alloc(g_offscreenSize);
+
+		dev_mem_file = fopen("/dev/mem", "r+b");
+		MY_ASSERT(dev_mem_file);
+
+		//fix me!
+		unsigned long offset = 0xe000000;			//240-16 MB
+		unsigned long size = 16 * 1024 * 1024;
+
+		void *ptr = mmap((void *)offset, size,
+				PROT_READ | PROT_WRITE, MAP_SHARED,
+				fileno(dev_mem_file),
+				offset);
+		MY_ASSERT(ptr == (void *)offset);
+
+		g_pOffscreenBase = (CARD8 *)ptr;
 
 		MY_ASSERT(g_pOffscreenBase);
+
+		kern_set_min_max_phys((void *)offset, ((void *)offset + size));
 
 		//touch every page
 //		memset(g_pOffscreenBase, 0xcd, g_offscreenSize);

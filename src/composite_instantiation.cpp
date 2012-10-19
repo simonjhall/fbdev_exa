@@ -191,6 +191,7 @@ extern "C" ptr2PdFunc EnumToFunc(const PorterDuffOp op,
 			TEST_FUNC(PDAdd, kX8B8G8R8, kX8B8G8R8, kA8, false)
 
 			TEST_FUNC(PDAdd, kA8, kA8, kA8, false)
+			TEST_FUNC(PDAdd, kA8R8G8B8, kA8, kA8, false)
 		}
 		else if (mask_pf == kA8)
 		{

@@ -560,7 +560,7 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 
 		unsigned long buffer_size;
 		if (!xf86GetOptValULong(fPtr->Options, OPTION_ALLOC_BLOCK, &buffer_size))
-			buffer_size = 12 * 1024 * 1024;		//12 meg, why not
+			buffer_size = 16 * 1024 * 1024;		//16 meg, why not
 
 		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Requesting %d bytes (%.2f MB) from the kernel as offscreen memory\n", buffer_size, (float)buffer_size / 1048576);
 		SetMemorySize(buffer_size);
@@ -906,6 +906,20 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 		if (!(pExa = exaDriverAlloc()))
 			return FALSE;
 
+		switch (kern_init())
+		{
+			case 0:	//ok
+				break;
+			case 1:
+				xf86DrvMsg(scrnIndex, X_INFO, "kernel interface already initialised\n");
+				break;
+			case 2:
+				xf86DrvMsg(scrnIndex, X_ERROR, "failed to initialise kernel interface (does /dev/dmaer exist?)\n");
+				return FALSE;
+			default:
+				MY_ASSERT(0);
+		}
+
 		pExa->flags = 0 | EXA_OFFSCREEN_PIXMAPS /*| EXA_HANDLES_PIXMAPS | EXA_SUPPORTS_PREPARE_AUX*/;
 		pExa->memoryBase = GetMemoryBase();
 		pExa->memorySize = GetMemorySize();
@@ -921,6 +935,8 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 			memset(GetMemoryBase(), 0xcd, GetMemorySize());
 		}
 
+		//get the max axi burst
+		xf86DrvMsg(scrnIndex, X_CONFIG, "max AXI burst suggested: %d\n", kern_get_max_burst());
 		BenchCopy();
 
 		if (g_nullDriver)

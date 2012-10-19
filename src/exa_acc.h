@@ -151,12 +151,15 @@ void *kern_alloc(size_t);
 void *kern_free(void *);
 
 //internal kernel dma control
+int kern_init(void);
 int kern_dma_prepare(void *);
 int kern_dma_kick(void *);
 int kern_dma_prepare_kick_wait(void *);
 int kern_dma_prepare_kick(void *ptr);
 int kern_dma_wait_one(void *);
 int kern_dma_wait_all(unsigned int bytesPending);
+int kern_get_max_burst(void);
+int kern_set_min_max_phys(void *pMin, void *pMax);
 
 //#define DEREFERENCE_TEST
 //#define STRADDLE_TEST
