@@ -423,7 +423,7 @@ public:
 	static inline unsigned int Op4(const unsigned int a, const unsigned int b);
 };
 
-
+//////////////////////////////
 template <PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class InOp<unsigned char, SourcePf, MaskPf, DestPf>
 {
@@ -495,6 +495,7 @@ public:
 	}
 };
 
+//////////////////////////////
 
 template <class T, PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class AddOp
@@ -549,6 +550,53 @@ public:
 	}
 };
 
+//////////////////////////////
+
+template <class T, PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
+class SrcOp
+{
+public:
+	static inline T Op(const T a);
+	static inline unsigned int Op4(const unsigned int a);
+};
+
+
+template <PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
+class SrcOp<unsigned char, SourcePf, MaskPf, DestPf>
+{
+public:
+	static inline unsigned char Op(const unsigned char a)
+	{
+		return a;
+	}
+
+	static inline unsigned int Op4(const unsigned int a)
+	{
+#if 0
+		unsigned char ar, ag, ab, aa;
+
+		Mux<SourcePf>::Separate(a, ar, ag, ab, aa);
+
+		unsigned char rr, rg, rb, ra;
+		rr = Op(ar);
+		rg = Op(ag);
+		rb = Op(ab);
+		ra = Op(aa);
+
+		unsigned int output;
+		Mux<DestPf>::Combine(output, rr, rg, rb, ra);
+		return output;
+#else
+		//rotate a to fit destination
+		unsigned int rebuilt_a;
+		rebuilt_a = Rotate<SourcePf, DestPf>(a);
+
+		return rebuilt_a;
+#endif
+	}
+};
+
+//////////////////////////////
 
 template <class T, PixelFormat SourcePf, PixelFormat MaskPf, PixelFormat DestPf>
 class OverOp
@@ -625,6 +673,8 @@ public:
 #endif
 	}
 };
+
+//////////////////////////////
 
 template <class T>
 class OutReverseOp
@@ -847,11 +897,13 @@ public:
 		else
 		{
 			//I don't think this is required
+			//yep, not needed
+			/*
 			if (Mux<pf>::GetOffset(kAlpha) == -1)
 				value = value | (alpha << (Mux<pf>::sm_alphaOffsetAt * 8));
+				*/
 
-			//fixme to use array4
-			((unsigned int *)m_pArray)[y * (m_stride / Mux<pf>::sm_numChannels) + x] = value;
+			m_pArray4[y * m_stride4 + x] = value;
 		}
 	}
 
@@ -1487,6 +1539,165 @@ public:
 #endif
 
 				dest4 = AddOp<unsigned char, Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::sm_formatPlusAlpha, Mask::sm_format, Dest::sm_format>::Op4(source4, dest4);
+
+#ifdef DEBUG
+				{
+					unsigned char vr, vg, vb, va;
+					Mux<Dest::sm_format>::Separate(dest4, vr, vg, vb, va);
+					if (Mux<Dest::sm_format>::GetOffset(kRed) != -1)
+						MY_ASSERT(vr == final_r);
+					if (Mux<Dest::sm_format>::GetOffset(kGreen) != -1)
+						MY_ASSERT(vg == final_g);
+					if (Mux<Dest::sm_format>::GetOffset(kBlue) != -1)
+						MY_ASSERT(vb == final_b);
+					if (Mux<Dest::sm_format>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(va == final_a);
+				}
+#endif
+
+				//write back to dest image
+//				dest.SetValue(dest_x, dest_y, kRed, final_r);
+//				dest.SetValue(dest_x, dest_y, kGreen, final_g);
+//				dest.SetValue(dest_x, dest_y, kBlue, final_b);
+//				dest.SetValue(dest_x, dest_y, kAlpha, final_a);
+
+				dest.SetValue4(dest_x, dest_y, dest4);
+			}
+		}
+	}
+};
+
+class PDSrc
+{
+public:
+	template <class Source, class Dest, class Mask, class SourceCoord>
+	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
+			const unsigned int width, const unsigned int height)
+	{
+		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
+
+		for (/* y */; y.End(); y.Next())
+		{
+			Iterator<SourceCoord, kX> x(source.GetOffX(), mask.GetOffX(), dest.GetOffX(), width, coord);
+			for (/* x */; x.End(); x.Next())
+			{
+				//get mask coordinates
+				const unsigned int mask_x = x.GetMask();
+				const unsigned int mask_y = y.GetMask();
+
+#ifdef DEBUG
+				unsigned char mask_pixel = mask.GetValue(mask_x, mask_y, kAlpha);
+#endif
+				unsigned int mask4 = mask.GetValue4(mask_x, mask_y);
+
+				mask.Prefetch(mask_x, mask_y, 64);
+
+#ifdef DEBUG
+				if (mask_pixel == 0)
+					continue;
+#endif
+				if (mask4 == 0)
+					continue;
+
+				//get source coordinates
+				const unsigned int source_x = x.GetSource();
+				const unsigned int source_y = y.GetSource();
+
+#ifdef DEBUG
+				unsigned char source_r = source.GetValue(source_x, source_y, kRed);
+				unsigned char source_g = source.GetValue(source_x, source_y, kGreen);
+				unsigned char source_b = source.GetValue(source_x, source_y, kBlue);
+				unsigned char source_a = source.GetValue(source_x, source_y, kAlpha);
+#endif
+
+				unsigned int source4 = source.GetValue4(source_x, source_y);
+#ifdef DEBUG
+				unsigned int debug_source4 = source4;
+#endif
+
+				if (x.DoSourcePrefetch())
+					source.Prefetch(source_x, source_y, 64);
+
+				//get dest coordinates
+				const unsigned int dest_x = x.GetDest();
+				const unsigned int dest_y = y.GetDest();
+
+#ifdef DEBUG
+				unsigned char dest_r = dest.GetValue(dest_x, dest_y, kRed);
+				unsigned char dest_g = dest.GetValue(dest_x, dest_y, kGreen);
+				unsigned char dest_b = dest.GetValue(dest_x, dest_y, kBlue);
+				unsigned char dest_a = dest.GetValue(dest_x, dest_y, kAlpha);
+#endif
+
+				unsigned int dest4 = dest.GetValue4(dest_x, dest_y);
+
+#ifdef DEBUG
+				unsigned int debug_dest4 = dest4;
+				{
+					unsigned char dr, dg, db, da;
+					Mux<Dest::sm_format>::Separate(dest4, dr, dg, db, da);
+
+					if (Mux<Dest::sm_format>::GetOffset(kRed) != -1)
+						MY_ASSERT(dr == dest_r);
+					if (Mux<Dest::sm_format>::GetOffset(kGreen) != -1)
+						MY_ASSERT(dg == dest_g);
+					if (Mux<Dest::sm_format>::GetOffset(kBlue) != -1)
+						MY_ASSERT(db == dest_b);
+					if (Mux<Dest::sm_format>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(da == dest_a);
+				}
+#endif
+
+				dest.Prefetch(dest_x, dest_y, 64);
+
+#ifdef DEBUG
+				{
+					unsigned char sr, sg, sb, sa;
+					Mux<Source::sm_format>::Separate(source4, sr, sg, sb, sa);
+
+					if (Mux<Source::sm_format>::GetOffset(kRed) != -1)
+						MY_ASSERT(sr == source_r);
+					if (Mux<Source::sm_format>::GetOffset(kGreen) != -1)
+						MY_ASSERT(sg == source_g);
+					if (Mux<Source::sm_format>::GetOffset(kBlue) != -1)
+						MY_ASSERT(sb == source_b);
+					if (Mux<Source::sm_format>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(sa == source_a);
+				}
+#endif
+
+				if (mask4 != 255)
+					source4 = InOp<unsigned char, Source::sm_format, Mask::sm_format, Mux<Source::sm_format>::sm_formatPlusAlpha>::Op4(source4, mask4);
+
+#ifdef DEBUG
+				if (mask_pixel != 255)
+				{
+					source_r = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_r, mask_pixel);
+					source_g = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_g, mask_pixel);
+					source_b = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_b, mask_pixel);
+					source_a = InOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_a, mask_pixel);
+				}
+
+				{
+					unsigned char vr, vg, vb, va;
+					Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::Separate(source4, vr, vg, vb, va);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kRed) != -1)
+						MY_ASSERT(vr == source_r);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kGreen) != -1)
+						MY_ASSERT(vg == source_g);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kBlue) != -1)
+						MY_ASSERT(vb == source_b);
+					if (Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::GetOffset(kAlpha) != -1)
+						MY_ASSERT(va == source_a);
+				}
+
+				unsigned char final_r = SrcOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_r);
+				unsigned char final_g = SrcOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_g);
+				unsigned char final_b = SrcOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_b);
+				unsigned char final_a = SrcOp<unsigned char, Source::sm_format, Mask::sm_format, Dest::sm_format>::Op(source_a);
+#endif
+
+				dest4 = SrcOp<unsigned char, Mux<Mux<Source::sm_format>::sm_formatPlusAlpha>::sm_formatPlusAlpha, Mask::sm_format, Dest::sm_format>::Op4(source4);
 
 #ifdef DEBUG
 				{

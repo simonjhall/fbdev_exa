@@ -17,6 +17,9 @@
 
 #include <time.h>
 
+//#define DEBUG_REJECTION(...) xf86DrvMsg(0, X_WARNING, __VA_ARGS__)
+#define DEBUG_REJECTION(...)
+
 //work to be run
 //guh, const in c does not mean constant...
 #define MAX_COMP_OPS 200
@@ -112,37 +115,37 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 //	xf86DrvMsg(0, X_DEFAULT, "%s %p+%p->%p\n", __FUNCTION__, pSrcPicture, pMaskPicture, pDstPicture);
 //	return FALSE;
 
-	//only two operations accelerated
-	if (op != PictOpOver && op != PictOpAdd/* && op != PictOpOutReverse*/)
+	//check operations accelerated
+	if (op != PictOpOver && op != PictOpAdd && op != PictOpSrc/* && op != PictOpOutReverse*/)
 	{
-		xf86DrvMsg(0, X_WARNING, "rejected operation %d\n", op);
+		DEBUG_REJECTION("rejected operation %d\n", op);
 		return FALSE;
 	}
 
 	//do not support component alpha
 	if (pMaskPicture && pMaskPicture->componentAlpha)
 	{
-		xf86DrvMsg(0, X_WARNING, "rejected mask component alpha\n");
+		DEBUG_REJECTION("rejected mask component alpha\n");
 		return FALSE;
 	}
 
 	//do not support transformations
 	if (pSrcPicture->transform)
 	{
-		xf86DrvMsg(0, X_WARNING, "rejected source transformation\n");
+		DEBUG_REJECTION("rejected source transformation\n");
 		return FALSE;
 	}
 
 	if (pMaskPicture && pMaskPicture->transform)
 	{
-		xf86DrvMsg(0, X_WARNING, "rejected mask transformation\n");
+		DEBUG_REJECTION("rejected mask transformation\n");
 		return FALSE;
 	}
 
 	//no mask wrapping
 	if (pMaskPicture && pMaskPicture->repeat)
 	{
-		xf86DrvMsg(0, X_WARNING, "rejected mask repeat\n");
+		DEBUG_REJECTION("rejected mask repeat\n");
 		return FALSE;
 	}
 
@@ -153,7 +156,7 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 		maskpf = pMaskPicture->format;
 	else if (pMaskPicture && pMaskPicture->pSourcePict)
 	{
-		xf86DrvMsg(0, X_WARNING, "rejected solid mask\n");
+		DEBUG_REJECTION("rejected solid mask\n");
 		return FALSE;
 	}
 
@@ -165,7 +168,7 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 	//if possible...
 	if (!g_pCompositor)
 	{
-		xf86DrvMsg(0, X_INFO, "reject: op %d, format %08x/%08x/%08x\n",
+		DEBUG_REJECTION("reject: op %d, format %08x/%08x/%08x\n",
 				op,
 				pSrcPicture->format, pDstPicture->format,
 				pMaskPicture ? pMaskPicture->format : 0);

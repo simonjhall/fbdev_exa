@@ -326,6 +326,7 @@ void SetScreen(ScreenPtr p)
 
 /******** EXA ********/
 
+static unsigned long g_devMemBase = 0;
 static CARD8 *g_pOffscreenBase = 0;
 static unsigned long g_offscreenSize = 0;
 
@@ -344,9 +345,8 @@ void *GetMemoryBase(void)
 		dev_mem_file = fopen("/dev/mem", "r+b");
 		MY_ASSERT(dev_mem_file);
 
-		//fix me!
-		unsigned long offset = 0xe000000;			//240-16 MB
-		unsigned long size = 16 * 1024 * 1024;
+		unsigned long offset = g_devMemBase;
+		unsigned long size = g_offscreenSize;
 
 		void *ptr = mmap((void *)offset, size,
 				PROT_READ | PROT_WRITE, MAP_SHARED,
@@ -379,6 +379,14 @@ void FreeMemoryBase(void)
 unsigned long GetMemorySize(void)
 {
 	return g_offscreenSize;
+}
+
+void SetMemoryBase(unsigned long p)
+{
+	MY_ASSERT(!g_devMemBase);
+
+	if (!g_devMemBase)
+		g_devMemBase = p;
 }
 
 void SetMemorySize(unsigned long s)

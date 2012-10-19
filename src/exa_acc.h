@@ -31,6 +31,7 @@ BOOL IsDmaPending(void);
 
 ////////////////////////////////////
 //driver exa functions
+void SetMemoryBase(unsigned long);
 void *GetMemoryBase(void);
 void FreeMemoryBase(void);
 void SetMemorySize(unsigned long);

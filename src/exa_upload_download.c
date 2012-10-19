@@ -101,6 +101,13 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 
 	Upload(&g_upDownloadDetails);
 
+	/* testing - doing upload asynchronously
+	 * can sometimes cause crashes within the X server
+	 */
+
+	//mark as async work done
+	exaMarkSync(pDst->drawable.pScreen);
+
 #ifdef CB_VALIDATION
 	if (IsPendingUnkicked())
 		ValidateCbList(GetUnkickedDmaHead());
@@ -109,7 +116,7 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 	if (StartDma(GetUnkickedDmaHead(), TRUE))
 		UpdateKickedDmaHead();
 
-	WaitMarker(GetScreen(), 0);			//there's clearly something to wait on
+//	WaitMarker(GetScreen(), 0);			//there's clearly something to wait on
 	//nothing pending here, so don't mark
 
 	return TRUE;

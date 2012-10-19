@@ -135,17 +135,19 @@ typedef enum {
 	OPTION_ALLOC_BLOCK,
 	OPTION_DEBUG,
 	OPTION_ACCELMETHOD,
-	OPTION_FAULT_IN_IMM
+	OPTION_FAULT_IN_IMM,
+	OPTION_BASE_MEM,
 } FBDevOpts;
 
 static const OptionInfoRec FBDevOptions[] = {
 	{ OPTION_SHADOW_FB,	"ShadowFB",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_ROTATE,	"Rotate",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_FBDEV,		"fbdev",	OPTV_STRING,	{0},	FALSE },
-	{ OPTION_ALLOC_BLOCK,	"AllocBlock",	OPTV_INTEGER,	{0},	FALSE },
 	{ OPTION_FAULT_IN_IMM,	"FaultInImm",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_DEBUG,		"debug",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_ACCELMETHOD,       "AccelMethod",  OPTV_STRING,    {0}, FALSE },
+	{ OPTION_ALLOC_BLOCK,	"BlockSize",	OPTV_INTEGER,	{0},	FALSE },
+	{ OPTION_BASE_MEM,	"BlockBase",	OPTV_INTEGER,	{0},	FALSE },
 	{ -1,			NULL,		OPTV_NONE,	{0},	FALSE }
 };
 
@@ -560,10 +562,23 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 
 		unsigned long buffer_size;
 		if (!xf86GetOptValULong(fPtr->Options, OPTION_ALLOC_BLOCK, &buffer_size))
-			buffer_size = 16 * 1024 * 1024;		//16 meg, why not
+		{
+			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Memory size not specified! (use BlockSize)\n");
+			return FALSE;
+		}
 
-		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Requesting %d bytes (%.2f MB) from the kernel as offscreen memory\n", buffer_size, (float)buffer_size / 1048576);
+		unsigned long buffer_base;
+		if (!xf86GetOptValULong(fPtr->Options, OPTION_BASE_MEM, &buffer_base))
+		{
+			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Memory base not specified! (use BlockBase)\n");
+			return FALSE;
+		}
+
+		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Using %d bytes (%.2f MB) of reserved memory as offscreen\n", buffer_size, (float)buffer_size / 1048576);
+		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Requesting memory range from %p-%p\n", buffer_base, buffer_base + buffer_size - 1);
+
 		SetMemorySize(buffer_size);
+		SetMemoryBase(buffer_base);
 	}
 	else
 		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Acceleration disabled\n");
