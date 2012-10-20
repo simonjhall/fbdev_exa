@@ -55,9 +55,12 @@ static inline void CopyLinear(struct DmaControlBlock *pCB,
 	 * Yet with source/dest inc enabled we can only get to 10.
 	 * Also other channels can only go up to 5, with source/dest burst disabled (unsure of how high it'll go with then enabled).
 	 */
+
+	extern unsigned int g_maxAxiBurst;
+
 	pCB->m_transferInfo = (srcInc << 8);			//do source increment?
 	pCB->m_transferInfo |= (1 << 4);				//dest increment
-	pCB->m_transferInfo |= (10 << 12);				//axi burst
+	pCB->m_transferInfo |= (g_maxAxiBurst << 12);				//axi burst
 	pCB->m_transferInfo |= (1 << 9);				//source burst
 	pCB->m_transferInfo |= (1 << 5);				//dest burst
 
@@ -78,16 +81,16 @@ static inline void Copy2D(struct DmaControlBlock *pCB,
 		void *pDestAddr, void *pSourceAddr, unsigned int xlength, unsigned int ylength,
 		unsigned int srcInc, unsigned int destStride, unsigned int sourceStride)
 {
+	extern unsigned int g_maxAxiBurst;	//not a fan
+
 	MY_ASSERT(pCB);
 	MY_ASSERT(pDestAddr);
 	MY_ASSERT(pSourceAddr);
 	MY_ASSERT(xlength > 0 && xlength <= 0xffff);
-	MY_ASSERT(ylength > 0 && ylength <= 0x3fff);
+	MY_ASSERT(ylength >= 0 && ylength <= 0x3fff);
 	MY_ASSERT(srcInc == 0 || srcInc == 1);
 	MY_ASSERT(sourceStride <= 0xffff);
 	MY_ASSERT(destStride <= 0xffff);
-
-	MY_ASSERT(0);		//fix transferinfo too
 
 #ifdef DEREFERENCE_TEST
 	if (*(volatile unsigned char *)pSourceAddr == *(volatile unsigned char *)pSourceAddr);
@@ -127,12 +130,24 @@ static inline void Copy2D(struct DmaControlBlock *pCB,
 	}
 #endif
 
-	pCB->m_transferInfo = (srcInc << 8) | (1 << 1);
+	pCB->m_transferInfo = (srcInc << 8);			//do source increment?
+	pCB->m_transferInfo |= (1 << 4);				//dest increment
+	pCB->m_transferInfo |= (g_maxAxiBurst << 12);				//axi burst
+	pCB->m_transferInfo |= (1 << 9);				//source burst
+	pCB->m_transferInfo |= (1 << 5);				//dest burst
+	pCB->m_transferInfo |= (1 << 1);				//do 2D
+
 	pCB->m_pSourceAddr = pSourceAddr;
 	pCB->m_pDestAddr = pDestAddr;
 	pCB->m_xferLen = (ylength << 16) | xlength;
 	pCB->m_tdStride = (destStride << 16) | sourceStride;
 	pCB->m_pNext = 0;
+
+	pCB->m_blank1 = pCB->m_blank2 = 0;
+
+	AddBytesPending(xlength * (ylength + 1));
+//	fprintf(stderr, "CB %p dest %p src %p, len %d/%d, srcInc %d, stride %d/%d\n",
+//			pCB, pDestAddr, pSourceAddr, xlength, ylength, srcInc, destStride, sourceStride);
 }
 
 #endif

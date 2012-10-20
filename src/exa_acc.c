@@ -114,20 +114,26 @@ void BenchCopy(void)
 	MY_ASSERT(IsDmaPending() == FALSE);
 
 	unsigned long size = GetMemorySize() / 2;
-	if (size > 14 * 1024 * 1024)
-		size = 14 * 1024 * 1024;
 
-	ForwardCopy(GetMemoryBase() + size, GetMemoryBase(), size);
+	//fill our CBs with X copies from the low end to the high end
+	const int its = 30;
+	int count;
+	for (count = 0; count < its; count++)
+		ForwardCopy(GetMemoryBase() + size, GetMemoryBase(), size);
+
+	size *= its;
 
 	MY_ASSERT(IsPendingUnkicked());
 	MY_ASSERT(IsDmaPending() == FALSE);
 
+	//kick
 	gettimeofday(&start, 0);
 	StartDma(GetUnkickedDmaHead(), TRUE);
 	UpdateKickedDmaHead();
 
 	MY_ASSERT(IsDmaPending());
 
+	//wait
 	WaitDma(TRUE);
 	gettimeofday(&stop, 0);
 
@@ -136,10 +142,54 @@ void BenchCopy(void)
 	g_dmaUnkickedHead = 0;
 	g_headOfDma = TRUE;
 
-	xf86DrvMsg(0, X_INFO, "DMA copy at %.2f MB/s (%.2f MB in %d us)\n",
+	xf86DrvMsg(0, X_INFO, "DMA copy at %.2f MB/s (%.2f MB in %d us, in %.2f MB chunks)\n",
 			(float)size / 1048576 / ((double)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)) / 1000000),
 			(float)size / 1048576,
-			(int)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)));
+			(int)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)),
+			(float)(size / its) / 1048576);
+}
+
+void BenchFill(void)
+{
+	struct timeval start, stop;
+
+	MY_ASSERT(IsPendingUnkicked() == FALSE);
+	MY_ASSERT(IsDmaPending() == FALSE);
+
+	unsigned long size = GetMemorySize();
+
+	//fill our CBs with X fills all over
+	const int its = 15;
+	int count;
+	for (count = 0; count < its; count++)
+		ForwardCopyNoSrcInc(GetMemoryBase(), GetMemoryBase(), size);
+
+	size *= its;
+
+	MY_ASSERT(IsPendingUnkicked());
+	MY_ASSERT(IsDmaPending() == FALSE);
+
+	//kick
+	gettimeofday(&start, 0);
+	StartDma(GetUnkickedDmaHead(), TRUE);
+	UpdateKickedDmaHead();
+
+	MY_ASSERT(IsDmaPending());
+
+	//wait
+	WaitDma(TRUE);
+	gettimeofday(&stop, 0);
+
+	//reset the dma system
+	g_dmaTail = 0;
+	g_dmaUnkickedHead = 0;
+	g_headOfDma = TRUE;
+
+	xf86DrvMsg(0, X_INFO, "DMA fill at %.2f MB/s (%.2f MB in %d us, in %.2f MB chunks)\n",
+			(float)size / 1048576 / ((double)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)) / 1000000),
+			(float)size / 1048576,
+			(int)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)),
+			(float)(size / its) / 1048576);
 }
 
 /**** starting ******/
@@ -326,7 +376,9 @@ void SetScreen(ScreenPtr p)
 
 /******** EXA ********/
 
-static unsigned long g_devMemBase = 0;
+unsigned long g_devMemBase = 0;
+unsigned long g_devMemBaseHigh = 0;
+
 static CARD8 *g_pOffscreenBase = 0;
 static unsigned long g_offscreenSize = 0;
 
@@ -342,16 +394,23 @@ void *GetMemoryBase(void)
 
 //		g_pOffscreenBase = kern_alloc(g_offscreenSize);
 
+		//open the device
 		dev_mem_file = fopen("/dev/mem", "r+b");
 		MY_ASSERT(dev_mem_file);
 
 		unsigned long offset = g_devMemBase;
 		unsigned long size = g_offscreenSize;
 
+		//the first byte we can't read
+		g_devMemBaseHigh = g_devMemBase + g_offscreenSize;
+
+		//map in the reserved piece of memory *with a virtual address that looks exactly the same as the physical address*
 		void *ptr = mmap((void *)offset, size,
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				fileno(dev_mem_file),
 				offset);
+		//this is essential, else we'll have to do an additional virtual to physical translation
+		//(in addition to the physical to bus we've already got to do)
 		MY_ASSERT(ptr == (void *)offset);
 
 		g_pOffscreenBase = (CARD8 *)ptr;
@@ -369,11 +428,19 @@ void *GetMemoryBase(void)
 
 void FreeMemoryBase(void)
 {
+	//change this as this no longer is correct for reserved memory (just unmap and close the file)
+	MY_ASSERT(0);
+
 	if (g_pOffscreenBase)
 	{
 		g_pOffscreenBase = kern_free(g_pOffscreenBase);
 		MY_ASSERT(!g_pOffscreenBase);
 	}
+}
+
+void SetMaxAxiBurst(unsigned int v)
+{
+	g_maxAxiBurst = v;
 }
 
 unsigned long GetMemorySize(void)

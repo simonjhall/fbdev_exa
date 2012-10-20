@@ -952,7 +952,10 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 
 		//get the max axi burst
 		xf86DrvMsg(scrnIndex, X_CONFIG, "max AXI burst suggested: %d\n", kern_get_max_burst());
+		SetMaxAxiBurst(kern_get_max_burst());		//and program X to use it
+
 		BenchCopy();
+		BenchFill();
 
 		if (g_nullDriver)
 		{

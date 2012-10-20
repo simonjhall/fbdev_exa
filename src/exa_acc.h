@@ -29,15 +29,21 @@ void UpdateKickedDmaHead(void);
 BOOL IsPendingUnkicked(void);
 BOOL IsDmaPending(void);
 
-////////////////////////////////////
-//driver exa functions
-void SetMemoryBase(unsigned long);
-void *GetMemoryBase(void);
-void FreeMemoryBase(void);
-void SetMemorySize(unsigned long);
-unsigned long GetMemorySize(void);
+//setting up the driver
+void SetMemoryBase(unsigned long);			//set /dev/mem high address
+void *GetMemoryBase(void);					//return user virtual offscreen memory address
+void FreeMemoryBase(void);					//unmap the offscreen memory somehow
+
+void SetMemorySize(unsigned long);			//set the amount reserved
+unsigned long GetMemorySize(void);			//get the size of the offscreen memory
+
 ScreenPtr GetScreen(void);
 void SetScreen(ScreenPtr);
+
+void SetMaxAxiBurst(unsigned int);
+
+////////////////////////////////////
+//driver exa functions
 
 int MarkSync(ScreenPtr pScreen);
 void WaitMarker(ScreenPtr pScreen, int Marker);
@@ -144,6 +150,7 @@ void ValidateCbList(struct DmaControlBlock *);
 
 //misc
 void BenchCopy(void);
+void BenchFill(void);
 
 /////////////////////////////////////
 
