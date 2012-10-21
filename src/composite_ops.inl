@@ -2,6 +2,13 @@
 
 //#define DEBUG
 
+//#define ENABLE_PREFETCH
+//#define SOURCE_PREFETCH
+//#define MASK_PREFETCH
+//#define DEST_PREFETCH
+
+#define PREFETCH_DISTANCE 128
+
 /////////////////////////////////////
 //crtp base class for mux
 template <typename Derived>
@@ -839,10 +846,12 @@ public:
 
 	inline void Prefetch_(int x, int y, const int offset) const
 	{
+#ifdef ENABLE_PREFETCH
 		if (Mux<pf>::sm_numChannels == 1)
 			__builtin_prefetch(&m_pArray[y * m_stride + x * Mux<pf>::sm_numChannels + offset]);
 		else if (Mux<pf>::sm_numChannels == 4)
 			__builtin_prefetch(&m_pArray4[y * m_stride4 + x + (offset >> 2)]);
+#endif
 	}
 
 	inline T GetValue_(int x, int y, Channel c) const
@@ -1195,8 +1204,8 @@ class PDOver
 {
 public:
 	template <class Source, class Dest, class Mask, class SourceCoord>
-	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
-			const unsigned int width, const unsigned int height)__attribute__ ((noinline))
+	inline static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
+			const unsigned int width, const unsigned int height)__attribute__ ((always_inline))
 	{
 		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
 
@@ -1214,7 +1223,9 @@ public:
 #endif
 				unsigned int mask4 = mask.GetValue4(mask_x, mask_y);
 
-				mask.Prefetch(mask_x, mask_y, 64);
+#ifdef MASK_PREFETCH
+				mask.Prefetch(mask_x, mask_y, PREFETCH_DISTANCE);
+#endif
 
 				//get out if we don't have to bother
 #ifdef DEBUG
@@ -1245,8 +1256,10 @@ public:
 				unsigned int debug_source4 = source4;
 #endif
 
+#ifdef SOURCE_PREFETCH
 				if (x.DoSourcePrefetch())
-					source.Prefetch(source_x, source_y, 64);
+					source.Prefetch(source_x, source_y, PREFETCH_DISTANCE);
+#endif
 
 				//get dest coordinates
 				const unsigned int dest_x = x.GetDest();
@@ -1277,7 +1290,9 @@ public:
 				}
 #endif
 
-				dest.Prefetch(dest_x, dest_y, 64);
+#ifdef DEST_PREFETCH
+				dest.Prefetch(dest_x, dest_y, PREFETCH_DISTANCE);
+#endif
 
 #ifdef DEBUG
 				{
@@ -1412,8 +1427,8 @@ class PDAdd
 {
 public:
 	template <class Source, class Dest, class Mask, class SourceCoord>
-	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
-			const unsigned int width, const unsigned int height)
+	inline static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
+			const unsigned int width, const unsigned int height)__attribute__ ((always_inline))
 	{
 		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
 
@@ -1431,7 +1446,9 @@ public:
 #endif
 				unsigned int mask4 = mask.GetValue4(mask_x, mask_y);
 
-				mask.Prefetch(mask_x, mask_y, 64);
+#ifdef MASK_PREFETCH
+				mask.Prefetch(mask_x, mask_y, PREFETCH_DISTANCE);
+#endif
 
 #ifdef DEBUG
 				if (mask_pixel == 0)
@@ -1456,8 +1473,10 @@ public:
 				unsigned int debug_source4 = source4;
 #endif
 
+#ifdef SOURCE_PREFETCH
 				if (x.DoSourcePrefetch())
-					source.Prefetch(source_x, source_y, 64);
+					source.Prefetch(source_x, source_y, PREFETCH_DISTANCE);
+#endif
 
 				//get dest coordinates
 				const unsigned int dest_x = x.GetDest();
@@ -1489,7 +1508,9 @@ public:
 				}
 #endif
 
-				dest.Prefetch(dest_x, dest_y, 64);
+#ifdef DEST_PREFETCH
+				dest.Prefetch(dest_x, dest_y, PREFETCH_DISTANCE);
+#endif
 
 #ifdef DEBUG
 				{
@@ -1571,8 +1592,8 @@ class PDSrc
 {
 public:
 	template <class Source, class Dest, class Mask, class SourceCoord>
-	static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
-			const unsigned int width, const unsigned int height)
+	inline static void Op(const Source &source, Dest &dest, const Mask &mask, const SourceCoord &coord,
+			const unsigned int width, const unsigned int height)__attribute__ ((always_inline))
 	{
 		Iterator<SourceCoord, kY> y(source.GetOffY(), mask.GetOffY(), dest.GetOffY(), height, coord);
 
@@ -1590,7 +1611,9 @@ public:
 #endif
 				unsigned int mask4 = mask.GetValue4(mask_x, mask_y);
 
-				mask.Prefetch(mask_x, mask_y, 64);
+#ifdef MASK_PREFETCH
+				mask.Prefetch(mask_x, mask_y, PREFETCH_DISTANCE);
+#endif
 
 #ifdef DEBUG
 				if (mask_pixel == 0)
@@ -1615,8 +1638,10 @@ public:
 				unsigned int debug_source4 = source4;
 #endif
 
+#ifdef SOURCE_PREFETCH
 				if (x.DoSourcePrefetch())
-					source.Prefetch(source_x, source_y, 64);
+					source.Prefetch(source_x, source_y, PREFETCH_DISTANCE);
+#endif
 
 				//get dest coordinates
 				const unsigned int dest_x = x.GetDest();
@@ -1648,7 +1673,9 @@ public:
 				}
 #endif
 
-				dest.Prefetch(dest_x, dest_y, 64);
+#ifdef DEST_PREFETCH
+				dest.Prefetch(dest_x, dest_y, PREFETCH_DISTANCE);
+#endif
 
 #ifdef DEBUG
 				{
