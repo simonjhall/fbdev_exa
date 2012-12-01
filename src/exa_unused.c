@@ -86,6 +86,11 @@ void FinishAccess(PixmapPtr pPix, int index)
 	MY_ASSERT(found);
 }
 
+void *CreatePixmap(ScreenPtr pScreen, int size, int align)
+{
+	return 0;
+}
+
 void *CreatePixmap2(ScreenPtr pScreen, int width, int height,
                             int depth, int usage_hint, int bitsPerPixel,
                             int *new_fb_pitch)

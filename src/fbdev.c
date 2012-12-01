@@ -18,7 +18,8 @@
 #include "micmap.h"
 #include "colormapst.h"
 #include "xf86cmap.h"
-#include "shadow.h"
+//#include "shadow.h"
+#include "screenint.h"
 #include "dgaproc.h"
 
 #include "exa.h"
@@ -137,6 +138,7 @@ typedef enum {
 	OPTION_ACCELMETHOD,
 	OPTION_FAULT_IN_IMM,
 	OPTION_BASE_MEM,
+	OPTION_MEM_MODE,
 } FBDevOpts;
 
 static const OptionInfoRec FBDevOptions[] = {
@@ -148,6 +150,7 @@ static const OptionInfoRec FBDevOptions[] = {
 	{ OPTION_ACCELMETHOD,       "AccelMethod",  OPTV_STRING,    {0}, FALSE },
 	{ OPTION_ALLOC_BLOCK,	"BlockSize",	OPTV_INTEGER,	{0},	FALSE },
 	{ OPTION_BASE_MEM,	"BlockBase",	OPTV_INTEGER,	{0},	FALSE },
+	{ OPTION_MEM_MODE,		"MemMode",	OPTV_STRING,	{0},	FALSE },
 	{ -1,			NULL,		OPTV_NONE,	{0},	FALSE }
 };
 
@@ -539,16 +542,37 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 	/****** EXA *******/
 	s = xf86GetOptValString(fPtr->Options, OPTION_ACCELMETHOD);
 
+	//default to exa=on
 	if (!s)
 		g_usingExa = TRUE;
-	else if (s && !xf86NameCmp(s, "EXA"))
+	else if (s && !xf86NameCmp(s, "EXA"))			//regular exa
 		g_usingExa = TRUE;
-	else if (s && !xf86NameCmp(s, "EXA_NULL"))
+	else if (s && !xf86NameCmp(s, "EXA_NULL"))		//passthrough null driver (expect complete screen corruption)
 	{
 		g_usingExa = TRUE;
 		g_nullDriver = TRUE;
 	}
 
+	if (!xf86LoadSubModule(pScrn, "fb"))
+		return FALSE;
+
+	//needed regardless of EXA usage or not
+	switch (kern_init())
+	{
+		case 0:	//ok
+			xf86DrvMsg(pScrn->scrnIndex, X_INFO, "kernel interface initialised\n");
+			break;
+		case 1:
+			xf86DrvMsg(pScrn->scrnIndex, X_INFO, "kernel interface already initialised\n");
+			break;
+		case 2:
+			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "failed to initialise kernel interface (does /dev/dmaer_4k exist?)\n");
+			return FALSE;
+		default:
+			MY_ASSERT(0);
+	}
+
+	//check for exa in any form
 	if (g_usingExa)
 	{
 		g_usingExa = TRUE;
@@ -557,9 +581,11 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 		if (g_nullDriver)
 			xf86DrvMsg(pScrn->scrnIndex, X_WARNING, "********USING NULL DRIVER EXPECT FULL SCREEN CORRUPTION - THIS IS INTENTIONAL********\n");
 
+		//load the module
 		if (!xf86LoadSubModule(pScrn, "exa"))
 			return FALSE;
 
+		//see how much memory we want to use for offscreen
 		unsigned long buffer_size;
 		if (!xf86GetOptValULong(fPtr->Options, OPTION_ALLOC_BLOCK, &buffer_size))
 		{
@@ -567,18 +593,60 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 			return FALSE;
 		}
 
-		unsigned long buffer_base;
-		if (!xf86GetOptValULong(fPtr->Options, OPTION_BASE_MEM, &buffer_base))
+		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Using %d bytes (%.2f MB) of memory as offscreen\n", buffer_size, (float)buffer_size / 1048576);
+		SetMemorySize(buffer_size);
+
+		//find the way in which we're going to get this memory
+		s = xf86GetOptValString(fPtr->Options, OPTION_MEM_MODE);
+
+		//could choose /dev/dmaer by default?
+		if (!s)
 		{
-			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Memory base not specified! (use BlockBase)\n");
+			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "No memory mode specified\n");
 			return FALSE;
 		}
+		else if (s && !xf86NameCmp(s, "4k"))
+		{
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Virtually contiguous physically discontiguous memory via /dev/dmaer_4k 4k interface selected\n");
+			//no extra options needed bar the size
+			if (CreateOffscreenMemory(kDevDmaer))
+				return FALSE;
+		}
+		else if (s && !xf86NameCmp(s, "mem"))
+		{
+			//get the address of the hole made in memory
+			unsigned long buffer_base;
 
-		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Using %d bytes (%.2f MB) of reserved memory as offscreen\n", buffer_size, (float)buffer_size / 1048576);
-		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Requesting memory range from %p-%p\n", buffer_base, buffer_base + buffer_size - 1);
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Virtually contiguous physically contiguous memory via /dev/mem and kernel mem=xyzMB interface selected\n");
 
-		SetMemorySize(buffer_size);
-		SetMemoryBase(buffer_base);
+			if (!xf86GetOptValULong(fPtr->Options, OPTION_BASE_MEM, &buffer_base))
+			{
+				xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Memory base not specified! (use BlockBase)\n");
+				return FALSE;
+			}
+
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Requesting memory range from %p-%p\n", buffer_base, buffer_base + buffer_size - 1);
+
+			//tell it where it is
+			SetMemoryBase(buffer_base);
+
+			//and try and open it
+			if (CreateOffscreenMemory(kDevMem))
+				return FALSE;
+		}
+		else if (s && !xf86NameCmp(s, "cma"))
+		{
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Virtually contiguous physically contiguous memory via /dev/dmaer_4k and VideoCore CMA interface selected\n");
+
+			//no extra options needed bar the size
+			if (CreateOffscreenMemory(kCma))
+				return FALSE;
+		}
+		else
+		{
+			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "unknown memory mode %s\n", s);
+			return FALSE;
+		}
 	}
 	else
 		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Acceleration disabled\n");
@@ -655,10 +723,6 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
                xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
                           "unrecognised fbdev hardware type (%d)\n", type);
                return FALSE;
-	}
-	if (xf86LoadSubModule(pScrn, "fb") == NULL) {
-		FBDevFreeRec(pScrn);
-		return FALSE;
 	}
 
 	/* Load shadow if needed */
@@ -921,21 +985,7 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 		if (!(pExa = exaDriverAlloc()))
 			return FALSE;
 
-		switch (kern_init())
-		{
-			case 0:	//ok
-				break;
-			case 1:
-				xf86DrvMsg(scrnIndex, X_INFO, "kernel interface already initialised\n");
-				break;
-			case 2:
-				xf86DrvMsg(scrnIndex, X_ERROR, "failed to initialise kernel interface (does /dev/dmaer exist?)\n");
-				return FALSE;
-			default:
-				MY_ASSERT(0);
-		}
-
-		pExa->flags = 0 | EXA_OFFSCREEN_PIXMAPS /*| EXA_HANDLES_PIXMAPS | EXA_SUPPORTS_PREPARE_AUX*/;
+		pExa->flags = 0 | EXA_OFFSCREEN_PIXMAPS/* | EXA_HANDLES_PIXMAPS | EXA_SUPPORTS_PREPARE_AUX*/;
 		pExa->memoryBase = GetMemoryBase();
 		pExa->memorySize = GetMemorySize();
 		pExa->offScreenBase = 0;
@@ -954,8 +1004,9 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 		xf86DrvMsg(scrnIndex, X_CONFIG, "max AXI burst suggested: %d\n", kern_get_max_burst());
 		SetMaxAxiBurst(kern_get_max_burst());		//and program X to use it
 
-		BenchCopy();
-		BenchFill();
+//		BenchCopy();
+//		BenchFill();
+//		BenchComposite();
 
 		if (g_nullDriver)
 		{
@@ -985,8 +1036,8 @@ FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
 	//		pExa->PrepareAccess = PrepareAccess;
 	//		pExa->FinishAccess = FinishAccess;
 	//
-	//		pExa->CreatePixmap2 = CreatePixmap2;
-	//		pExa->DestroyPixmap = DestroyPixmap;
+//			pExa->CreatePixmap = CreatePixmap;
+//			pExa->DestroyPixmap = DestroyPixmap;
 	//		pExa->PixmapIsOffscreen = PixmapIsOffscreen;
 	//		pExa->ModifyPixmapHeader = ModifyPixmapHeader;
 

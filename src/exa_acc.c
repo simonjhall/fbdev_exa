@@ -89,107 +89,17 @@ BOOL IsDmaPending(void)
 /**** validation ****/
 void ValidateCbList(struct DmaControlBlock *pCB)
 {
-	if (!pCB)
-		return;
-
 	while (pCB)
 	{
-		MY_ASSERT(pCB->m_transferInfo == pCB->m_transferInfo);
-
 		unsigned char *pSource = (unsigned char *)pCB->m_pSourceAddr;
 		unsigned char *pDest = (unsigned char *)pCB->m_pDestAddr;
 
-		MY_ASSERT(*(volatile unsigned char *)pSource == *(volatile unsigned char *)pSource);
-		MY_ASSERT(*(volatile unsigned char *)pDest == *(volatile unsigned char *)pDest);
+		//verifying that the data equals itself is not what we're after, we just want to see if we can dereference the pointers
+		MY_ASSERT((*(volatile unsigned char *)pSource, 1));
+		MY_ASSERT((*(volatile unsigned char *)pDest, 1));
 
 		pCB = pCB->m_pNext;
 	}
-}
-
-void BenchCopy(void)
-{
-	struct timeval start, stop;
-
-	MY_ASSERT(IsPendingUnkicked() == FALSE);
-	MY_ASSERT(IsDmaPending() == FALSE);
-
-	unsigned long size = GetMemorySize() / 2;
-
-	//fill our CBs with X copies from the low end to the high end
-	const int its = 30;
-	int count;
-	for (count = 0; count < its; count++)
-		ForwardCopy(GetMemoryBase() + size, GetMemoryBase(), size);
-
-	size *= its;
-
-	MY_ASSERT(IsPendingUnkicked());
-	MY_ASSERT(IsDmaPending() == FALSE);
-
-	//kick
-	gettimeofday(&start, 0);
-	StartDma(GetUnkickedDmaHead(), TRUE);
-	UpdateKickedDmaHead();
-
-	MY_ASSERT(IsDmaPending());
-
-	//wait
-	WaitDma(TRUE);
-	gettimeofday(&stop, 0);
-
-	//reset the dma system
-	g_dmaTail = 0;
-	g_dmaUnkickedHead = 0;
-	g_headOfDma = TRUE;
-
-	xf86DrvMsg(0, X_INFO, "DMA copy at %.2f MB/s (%.2f MB in %d us, in %.2f MB chunks)\n",
-			(float)size / 1048576 / ((double)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)) / 1000000),
-			(float)size / 1048576,
-			(int)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)),
-			(float)(size / its) / 1048576);
-}
-
-void BenchFill(void)
-{
-	struct timeval start, stop;
-
-	MY_ASSERT(IsPendingUnkicked() == FALSE);
-	MY_ASSERT(IsDmaPending() == FALSE);
-
-	unsigned long size = GetMemorySize();
-
-	//fill our CBs with X fills all over
-	const int its = 15;
-	int count;
-	for (count = 0; count < its; count++)
-		ForwardCopyNoSrcInc(GetMemoryBase(), GetMemoryBase(), size);
-
-	size *= its;
-
-	MY_ASSERT(IsPendingUnkicked());
-	MY_ASSERT(IsDmaPending() == FALSE);
-
-	//kick
-	gettimeofday(&start, 0);
-	StartDma(GetUnkickedDmaHead(), TRUE);
-	UpdateKickedDmaHead();
-
-	MY_ASSERT(IsDmaPending());
-
-	//wait
-	WaitDma(TRUE);
-	gettimeofday(&stop, 0);
-
-	//reset the dma system
-	g_dmaTail = 0;
-	g_dmaUnkickedHead = 0;
-	g_headOfDma = TRUE;
-
-	xf86DrvMsg(0, X_INFO, "DMA fill at %.2f MB/s (%.2f MB in %d us, in %.2f MB chunks)\n",
-			(float)size / 1048576 / ((double)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)) / 1000000),
-			(float)size / 1048576,
-			(int)((stop.tv_sec-start.tv_sec)*1000000ULL+(stop.tv_usec-start.tv_usec)),
-			(float)(size / its) / 1048576);
 }
 
 /**** starting ******/
@@ -220,7 +130,8 @@ inline BOOL StartDma(struct DmaControlBlock *pCB, BOOL force)
 		ValidateCbList(pCB);
 #endif
 #ifndef EMULATE_DMA
-		kern_dma_prepare_kick(pCB);
+		if (kern_dma_prepare_kick(pCB))
+			MY_ASSERT(0);
 #endif
 		g_actualStarts++;
 
@@ -384,19 +295,28 @@ static unsigned long g_offscreenSize = 0;
 
 static FILE *dev_mem_file = 0;
 
-void *GetMemoryBase(void)
+int CreateOffscreenMemory(enum OffscreenMemMode m)
 {
-	static int run = 0;
-	if (!run)
+	if (g_offscreenSize < 1048576)
 	{
-		run = 1;
-		MY_ASSERT(g_offscreenSize >= 1048576);				//realistically you need more like >4MB
+		xf86DrvMsg(0, X_ERROR, "memory size of %d bytes is too small to be useable (realistically you need more like >4MB)\n", g_offscreenSize);
+		return 1;
+	}
 
-//		g_pOffscreenBase = kern_alloc(g_offscreenSize);
+	switch (m)
+	{
+	case kDevDmaer:
+		g_pOffscreenBase = kern_alloc(g_offscreenSize);
+		break;
 
-		//open the device
+	case kDevMem:
+	{
 		dev_mem_file = fopen("/dev/mem", "r+b");
-		MY_ASSERT(dev_mem_file);
+		if (!dev_mem_file)
+		{
+			xf86DrvMsg(0, X_ERROR, "failed to open /dev/mem\n");
+			return 1;
+		}
 
 		unsigned long offset = g_devMemBase;
 		unsigned long size = g_offscreenSize;
@@ -409,20 +329,83 @@ void *GetMemoryBase(void)
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				fileno(dev_mem_file),
 				offset);
-		//this is essential, else we'll have to do an additional virtual to physical translation
-		//(in addition to the physical to bus we've already got to do)
-		MY_ASSERT(ptr == (void *)offset);
+
+		if (ptr != (void *)offset)
+			kern_set_min_max_phys(ptr, (void *)((unsigned long)ptr + size), offset - (unsigned long)ptr + 0x40000000);
+		else
+			kern_set_min_max_phys((void *)offset, (void *)(offset + size), 0x40000000);		//add this to get the 0x4 bus address
 
 		g_pOffscreenBase = (CARD8 *)ptr;
 
-		MY_ASSERT(g_pOffscreenBase);
-
-		kern_set_min_max_phys((void *)offset, ((void *)offset + size));
-
-		//touch every page
-//		memset(g_pOffscreenBase, 0xcd, g_offscreenSize);
+		break;
 	}
 
+	case kCma:
+	{
+		//basic check
+		if (g_offscreenSize & 4095)
+		{
+			xf86DrvMsg(0, X_ERROR, "CMA requires memory size to be multiple of page size (4096 bytes)\n");
+			return 1;
+		}
+
+		dev_mem_file = fopen("/dev/mem", "r+b");
+		if (!dev_mem_file)
+		{
+			xf86DrvMsg(0, X_ERROR, "failed to open /dev/mem\n");
+			return 1;
+		}
+
+		//try and allocate the memory from VC
+		void *arm_phys = kern_cma_set_size(g_offscreenSize);
+
+		if (!arm_phys)
+		{
+			xf86DrvMsg(0, X_ERROR, "failed to allocate CMA memory from VC\n");
+			return 1;
+		}
+
+		unsigned long size = g_offscreenSize;
+
+		//map in the reserved piece of memory *with a virtual address that looks exactly the same as the physical address*
+		void *ptr = mmap(arm_phys, size,
+				PROT_READ | PROT_WRITE, MAP_SHARED,
+				fileno(dev_mem_file),
+				(unsigned long)arm_phys);
+
+		if (ptr != arm_phys)
+			kern_set_min_max_phys(ptr, (void *)((unsigned long)ptr + size), (unsigned long)arm_phys - (unsigned long)ptr);
+		else
+			kern_set_min_max_phys(arm_phys, (void *)((unsigned long)arm_phys + size), 0);		//should include the prefix to choose which region we're in
+
+		g_devMemBase = (unsigned long)ptr;
+		//the first byte we can't read
+		g_devMemBaseHigh = g_devMemBase + g_offscreenSize;
+
+		g_pOffscreenBase = (CARD8 *)ptr;
+
+		break;
+	}
+
+	default:
+		MY_ASSERT(0);
+		break;
+	};
+
+	if (!g_pOffscreenBase)
+	{
+		xf86DrvMsg(0, X_ERROR, "failed to allocate and map memory\n");
+		return 1;
+	}
+
+	return 0;
+}
+
+void DestroyOffscreenMemory(void);
+
+void *GetMemoryBase(void)
+{
+	MY_ASSERT(g_pOffscreenBase);
 	return g_pOffscreenBase;
 }
 
@@ -472,6 +455,7 @@ int MarkSync(ScreenPtr pScreen)
 
 void WaitMarker(ScreenPtr pScreen, int Marker)
 {
+//	xf86DrvMsg(0, X_INFO, "%s\n", __FUNCTION__);
 //	time_t start = clock();
 
 //	static int dmas = 0;

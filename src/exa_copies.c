@@ -189,13 +189,23 @@ void Copy2D4kSrcInc(void *pDestAddr, void *pSourceAddr, unsigned int xlength, un
 	}
 	else
 	{
-		int y;
-		for (y = 0; y < ylength; y++)
+		for (int y = 0; y < ylength; y++)
 		{
 			ForwardCopy(pDestAddr, pSourceAddr, xlength);
 			pDestAddr = (void *)((unsigned long)pDestAddr + xlength + destStride);
 			pSourceAddr = (void *)((unsigned long)pSourceAddr + xlength + sourceStride);
 		}
+	}
+}
+
+void Copy2D4kSrcInc_fallback(void *pDestAddr, void *pSourceAddr, unsigned int xlength, unsigned int ylength,
+		unsigned int destStride, unsigned int sourceStride)
+{
+	for (int y = 0; y < ylength; y++)
+	{
+		memcpy(pDestAddr, pSourceAddr, xlength);
+		pDestAddr = (void *)((unsigned long)pDestAddr + xlength + destStride);
+		pSourceAddr = (void *)((unsigned long)pSourceAddr + xlength + sourceStride);
 	}
 }
 

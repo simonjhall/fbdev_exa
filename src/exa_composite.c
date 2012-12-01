@@ -17,8 +17,9 @@
 
 #include <time.h>
 
-//#define DEBUG_REJECTION(...) xf86DrvMsg(0, X_WARNING, __VA_ARGS__)
-#define DEBUG_REJECTION(...)
+//#define COMPOSITE_DEBUG
+#define DEBUG_REJECTION(...) xf86DrvMsg(0, X_WARNING, __VA_ARGS__)
+//#define DEBUG_REJECTION(...)
 
 //work to be run
 //guh, const in c does not mean constant...
@@ -112,7 +113,9 @@ int WritePGMAlpha(const char *filename, const int width, const int height, const
 Bool CheckComposite(int op, PicturePtr pSrcPicture,
 		PicturePtr pMaskPicture, PicturePtr pDstPicture)
 {
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p+%p->%p\n", __FUNCTION__, pSrcPicture, pMaskPicture, pDstPicture);
+#ifdef COMPOSITE_DEBUG
+	xf86DrvMsg(0, X_DEFAULT, "%s source %p + mask %p -> dest %p\n", __FUNCTION__, pSrcPicture, pMaskPicture, pDstPicture);
+#endif
 //	return FALSE;
 
 	//check operations accelerated
@@ -191,6 +194,10 @@ Bool PrepareComposite(int op, PicturePtr pSrcPicture,
 {
 	MY_ASSERT(pDst);
 
+#ifdef COMPOSITE_DEBUG
+	xf86DrvMsg(0, X_DEFAULT, "%s op %d source %p + mask %p -> dest %p\n", __FUNCTION__, op, pSrcPicture, pMaskPicture, pDstPicture);
+#endif
+
 	//save some state necessary
 	g_pSrcPicture = pSrcPicture;
 	g_pMaskPicture = pMaskPicture;
@@ -211,23 +218,21 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 		int maskY, int dstX, int dstY, int width, int height)
 {
 //	static int operation = 0;
-//	xf86DrvMsg(0, X_DEFAULT, "%.3f, %d, %s, (wh %2dx%2d s %2d,%2d m %2d,%2d d %2d,%2d, bpp %2d,%2d,%2d dim %2d,%2d %2d,%2d %2d,%2d)\n",
-//			(double)clock() / CLOCKS_PER_SEC,
-//			operation,
-//			__FUNCTION__,
-////			g_pSrcPicture, g_pMaskPicture, g_pDstPicture,
-////			g_compositeOp,
-////			g_pSrc, g_pMask, g_pDst,
-//			width, height,
-//			srcX, srcY,
-//			maskX, maskY,
-//			dstX, dstY,
-//			g_pSrc->drawable.depth,
-//			g_pDst->drawable.depth,
-//			g_pMask ? g_pMask->drawable.depth : -1,
-//			g_pSrc->drawable.width, g_pSrc->drawable.height,
-//			g_pDst->drawable.width, g_pDst->drawable.height,
-//			g_pMask ? g_pMask->drawable.width : -1, g_pMask ? g_pMask->drawable.height : -1);
+#ifdef COMPOSITE_DEBUG
+	xf86DrvMsg(0, X_DEFAULT, "%.3f, %s, (wh %2dx%2d s %2d,%2d m %2d,%2d d %2d,%2d, bpp %2d,%2d,%2d dim %2d,%2d %2d,%2d %2d,%2d)\n",
+			(double)clock() / CLOCKS_PER_SEC,
+			__FUNCTION__,
+			width, height,
+			srcX, srcY,
+			maskX, maskY,
+			dstX, dstY,
+			g_pSrc ? g_pSrc->drawable.depth : -1,
+			g_pDst ? g_pDst->drawable.depth : -1,
+			g_pMask ? g_pMask->drawable.depth : -1,
+			g_pSrc ? g_pSrc->drawable.width : -1, g_pSrc ? g_pSrc->drawable.height : -1,
+			g_pDst ? g_pDst->drawable.width : -1, g_pDst ? g_pDst->drawable.height : -1,
+			g_pMask ? g_pMask->drawable.width : -1, g_pMask ? g_pMask->drawable.height : -1);
+#endif
 
 	//record the state in the list
 	g_opList[g_pendingOps].srcX = srcX;
@@ -325,6 +330,10 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 void DoneComposite(PixmapPtr pDst)
 {
 	MY_ASSERT(pDst == g_pDst);
+
+#ifdef COMPOSITE_DEBUG
+	xf86DrvMsg(0, X_DEFAULT, "%s dest pixmap %p\n", __FUNCTION__, pDst);
+#endif
 
 #ifdef CB_VALIDATION
 	if (IsPendingUnkicked())

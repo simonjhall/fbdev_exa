@@ -16,6 +16,9 @@
 
 #include "exa_acc.h"
 
+//#define COPY_DEBUG
+#define COPY_FALLBACK 100
+
 struct CopyDetails
 {
 	PixmapPtr m_pSrc;
@@ -29,7 +32,9 @@ struct CopyDetails
 Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 		int dy, int alu, Pixel planemask)
 {
-//	xf86DrvMsg(0, X_INFO, "%s %p->%p\n", __FUNCTION__, pSrcPixmap, pDstPixmap);
+#ifdef COPY_DEBUG
+	xf86DrvMsg(0, X_INFO, "%s pixmaps %p->%p\n", __FUNCTION__, pSrcPixmap, pDstPixmap);
+#endif
 //	return FALSE;
 
 	//check they're valid pointers
@@ -97,8 +102,10 @@ Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 		int dstX, int dstY, int width, int height)
 {
-//	xf86DrvMsg(0, X_DEFAULT, "%s %p, %d %d, %d %d, %d %d\n",
-//			__FUNCTION__, pDstPixmap, srcX, srcY, dstX, dstY, width, height);
+#ifdef COPY_DEBUG
+	xf86DrvMsg(0, X_DEFAULT, "%s dest pixmap %p, source %d,%d, dest %d,%d, dims %dx%d\n",
+			__FUNCTION__, pDstPixmap, srcX, srcY, dstX, dstY, width, height);
+#endif
 	MY_ASSERT(pDstPixmap == g_copyDetails.m_pDst);
 	unsigned char *pSrc, *pDst;
 	pSrc = exaGetPixmapAddress(g_copyDetails.m_pSrc);
@@ -128,21 +135,25 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 	}
 	else	//do the whole thing as one 2d operation
 	{
-//		int y;
-//		for (y = 0; y < height; y++)
-//		{
-//			unsigned char *src = &pSrc[(y + srcY) * srcPitch + srcX * g_copyDetails.m_bpp];
-//			unsigned char *dst = &pDst[(y + dstY) * dstPitch + dstX * g_copyDetails.m_bpp];
-//
-//			ForwardCopy(dst, src, width * g_copyDetails.m_bpp);
-//		}
-
-		Copy2D4kSrcInc(&pDst[dstY * dstPitch + dstX * g_copyDetails.m_bpp],
-				&pSrc[+ srcY * srcPitch + srcX * g_copyDetails.m_bpp],
-				width * g_copyDetails.m_bpp,
-				height,
-				dstPitch - width * g_copyDetails.m_bpp,
-				srcPitch - width * g_copyDetails.m_bpp);
+		if (width * height < COPY_FALLBACK && !IsPendingUnkicked() && !IsDmaPending())
+		{
+#ifdef COPY_DEBUG
+			xf86DrvMsg(0, X_DEFAULT, "copy fallback\n");
+#endif
+			Copy2D4kSrcInc_fallback(&pDst[dstY * dstPitch + dstX * g_copyDetails.m_bpp],
+					&pSrc[+ srcY * srcPitch + srcX * g_copyDetails.m_bpp],
+					width * g_copyDetails.m_bpp,
+					height,
+					dstPitch - width * g_copyDetails.m_bpp,
+					srcPitch - width * g_copyDetails.m_bpp);
+		}
+		else
+			Copy2D4kSrcInc(&pDst[dstY * dstPitch + dstX * g_copyDetails.m_bpp],
+					&pSrc[+ srcY * srcPitch + srcX * g_copyDetails.m_bpp],
+					width * g_copyDetails.m_bpp,
+					height,
+					dstPitch - width * g_copyDetails.m_bpp,
+					srcPitch - width * g_copyDetails.m_bpp);
 	}
 
 #ifdef CB_VALIDATION
@@ -154,6 +165,10 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 void DoneCopy(PixmapPtr p)
 {
 	MY_ASSERT(g_copyDetails.m_pDst == p);
+
+#ifdef COPY_DEBUG
+	xf86DrvMsg(0, X_DEFAULT, "%s pixmap %p\n", __FUNCTION__, p);
+#endif
 
 #ifdef CB_VALIDATION
 	if (IsPendingUnkicked())
@@ -168,7 +183,7 @@ void DoneCopy(PixmapPtr p)
 
 	//there may be nothing pending, as work may have been kicked when
 	//trying to allocate a block
-	//todo to a count to see if Copy was actually called
+	//todo do a count to see if Copy was actually called and any async work was enqueued
 	exaMarkSync(g_copyDetails.m_pDst->drawable.pScreen);
 }
 

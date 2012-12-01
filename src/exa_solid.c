@@ -16,6 +16,9 @@
 
 #include "exa_acc.h"
 
+//#define SOLID_DEBUG
+#define SOLID_FALLBACK 100
+
 struct SolidDetails
 {
 	PixmapPtr m_pDst;
@@ -24,10 +27,46 @@ struct SolidDetails
 	int m_syncPoint;
 } g_solidDetails;
 
+
+void FallbackFill8(unsigned char *pDest, unsigned char source, int width, int height, int stride)
+{
+	if (width == 1)
+		for (int count = 0; count < height; count++)
+		{
+			*pDest = source;
+			pDest += stride;
+		}
+	else
+		for (int count = 0; count < height; count++)
+		{
+			memset(pDest, source, width);
+			pDest += stride;
+		}
+}
+
+void FallbackFill32(unsigned char *pDest, unsigned int source, int width, int height, int stride)
+{
+	if (width == 1)
+		for (int count = 0; count < height; count++)
+		{
+			*(unsigned int *)pDest = source;
+			pDest += stride;
+		}
+	else
+		for (int count = 0; count < height; count++)
+		{
+			for (int x = 0; x < width; x++)
+				((unsigned int *)pDest)[x] = source;
+			pDest += stride;
+		}
+}
+
 Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 		Pixel fg)
 {
-//	xf86DrvMsg(0, X_INFO, "%s %p\n", __FUNCTION__, pPixmap);
+#ifdef SOLID_DEBUG
+	xf86DrvMsg(0, X_INFO, "%s pixmap %p\n", __FUNCTION__, pPixmap);
+#endif
 //	return FALSE;
 
 	//check it's a valid pointer
@@ -80,9 +119,11 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 {
 	MY_ASSERT(pPixmap == g_solidDetails.m_pDst);
 
-//	xf86DrvMsg(0, X_INFO, "%s %p (%d,%d->%d,%d %dx%d)\n", __FUNCTION__, pPixmap,
-//			X1, Y1, X2, Y2,
-//			X2 - X1, Y2 - Y1);
+#ifdef SOLID_DEBUG
+	xf86DrvMsg(0, X_INFO, "%s pixmap %p (box from %d,%d->%d,%d dims %dx%d)\n", __FUNCTION__, pPixmap,
+			X1, Y1, X2, Y2,
+			X2 - X1, Y2 - Y1);
+#endif
 
 #ifdef CB_VALIDATION
 	if (IsPendingUnkicked())
@@ -100,6 +141,28 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 	int height = Y2 - Y1;
 	//get a new dma block and some solid space
 	unsigned char *pSolid = 0;
+
+	if (width * height < SOLID_FALLBACK && !IsPendingUnkicked() && !IsDmaPending())
+	{
+		if (bpp == 1)
+		{
+#ifdef SOLID_DEBUG
+			xf86DrvMsg(0, X_INFO, "CPU 8-bit fallback of %d pixels\n", width * height);
+#endif
+			FallbackFill8(&pDst[Y1 * dstPitch + X1], g_solidDetails.m_toFill, width, height, dstPitch);
+			return;
+		}
+		else if (bpp == 4)
+		{
+#ifdef SOLID_DEBUG
+			xf86DrvMsg(0, X_INFO, "CPU 32-bit fallback of %d pixels\n", width * height);
+#endif
+			FallbackFill32(&pDst[Y1 * dstPitch + X1 * 4], g_solidDetails.m_toFill, width, height, dstPitch);
+			return;
+		}
+		else
+			xf86DrvMsg(0, X_INFO, "fallback unsupported %d\n", bpp);
+	}
 
 	//get some solid space
 	while (!(pSolid = AllocSolidBuffer(32)))
@@ -186,6 +249,10 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 void DoneSolid(PixmapPtr p)
 {
 	MY_ASSERT(g_solidDetails.m_pDst == p);
+
+#ifdef SOLID_DEBUG
+	xf86DrvMsg(0, X_INFO, "%s %p\n", __FUNCTION__, p);
+#endif
 
 #ifdef CB_VALIDATION
 	if (IsPendingUnkicked())
