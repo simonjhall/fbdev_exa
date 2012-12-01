@@ -244,6 +244,25 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 	g_opList[g_pendingOps].dstX = dstX;
 	g_opList[g_pendingOps].dstY = dstY;
 
+	if (g_pSrc && g_pSrc->drawable.width > 1 && g_pSrc->drawable.height > 1)
+	{
+		//compute last read source pixel
+		int last_x = srcX + width;
+		int last_y = srcY + height;
+
+		if (last_x > g_pSrc->drawable.width)
+		{
+			width -= (last_x - g_pSrc->drawable.width);
+			xf86DrvMsg(0, X_WARNING, "composite would have overread in X by %d pixels\n", last_x - g_pSrc->drawable.width);
+		}
+
+		if (last_y > g_pSrc->drawable.height)
+		{
+			height -= (last_y - g_pSrc->drawable.height);
+			xf86DrvMsg(0, X_WARNING, "composite would have overread in Y by %d pixels\n", last_y - g_pSrc->drawable.height);
+		}
+	}
+
 	g_opList[g_pendingOps].width = width;
 	g_opList[g_pendingOps].height = height;
 
