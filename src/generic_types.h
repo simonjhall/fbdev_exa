@@ -96,6 +96,33 @@ extern "C" {
 //translates from operation to function pointer
 ptr2PdFunc EnumToFunc(const enum PorterDuffOp op,
 		enum PixelFormat source_pf, enum PixelFormat dest_pf, enum PixelFormat mask_pf);
+ptr2PdFunc EnumToFuncVpu(const enum PorterDuffOp op,
+		enum PixelFormat source_pf, enum PixelFormat dest_pf, enum PixelFormat mask_pf);
+
+struct PackedCompositeOp
+{
+	//vpu function to call
+	ptr2PdFunc m_pCompositor;
+
+	//list of operations to do
+	struct CompositeOp *m_pOp;
+	unsigned int m_numOps;
+
+	//shared data between each operation
+	unsigned char *m_pSource;
+	unsigned char *m_pDest;
+	unsigned char *m_pMask;
+
+	unsigned int m_sourceStride;
+	unsigned int m_destStride;
+	unsigned int m_maskStride;
+
+	unsigned int m_sourceWidth;
+	unsigned int m_sourceHeight;
+	unsigned int m_sourceWrap;
+};
+
+void VpuComposite(const struct PackedCompositeOp * const pOps, const int numOps);
 
 #ifdef __cplusplus
 }
