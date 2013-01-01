@@ -4,6 +4,7 @@
 
 #include <string.h>
 #include <time.h>
+#include <malloc.h>
 
 #include "xf86.h"
 #include "fb.h"
@@ -11,15 +12,105 @@
 
 #include "exa_acc.h"
 
-struct SysPtrCopy
+/*struct SysPtrCopy
 {
 	PixmapPtr m_pPixmap;
 	void *m_pSysPtr;
-} g_sysPtrCopies[EXA_NUM_PREPARE_INDICES];
+} g_sysPtrCopies[EXA_NUM_PREPARE_INDICES];*/
 
+////////////////////////////////
+typedef void* mspace;
+void *create_mspace_with_base(void* base, size_t capacity, int locked);
+size_t destroy_mspace(mspace msp);
+struct mallinfo mspace_mallinfo(mspace msp);
+
+void* mspace_malloc(mspace msp, size_t bytes);
+void* mspace_memalign(mspace msp, size_t alignment, size_t bytes);
+void mspace_free(mspace msp, void* mem);
+
+mspace g_offscreenMspace = 0;
+
+struct RpiPixmapPriv
+{
+	void *m_pBuffer;
+	int m_mapped;
+};
+
+extern _X_EXPORT CARD8 *exaGetPixmapAddressNEW(PixmapPtr pPix)
+{
+	if (g_offscreenMspace)
+	{
+		struct RpiPixmapPriv *priv = (struct RpiPixmapPriv *)exaGetPixmapDriverPrivate(pPix);
+		if (!priv)
+			return 0;
+		return priv->m_pBuffer;
+	}
+	else
+		return exaGetPixmapAddress(pPix);
+}
+
+void InitOffscreenAlloc(void)
+{
+	MY_ASSERT(g_offscreenMspace == 0);
+	g_offscreenMspace = create_mspace_with_base(GetMemoryBase(), GetMemorySize(), 0);
+	MY_ASSERT(g_offscreenMspace != 0);
+}
+
+void DestroyOffscreenAlloc(void)
+{
+	if (g_offscreenMspace == 0)
+		return;
+
+	destroy_mspace(g_offscreenMspace);
+	g_offscreenMspace = 0;
+}
+
+void OffscreenUsedUnused(int *pUsed, int *pMostUsed, int *pUnused)
+{
+	if (g_offscreenMspace == 0)
+	{
+		*pUsed = *pMostUsed = *pUnused = 0;
+	}
+	else
+	{
+		struct mallinfo info = mspace_mallinfo(g_offscreenMspace);
+
+		MY_ASSERT(pUsed);
+		MY_ASSERT(pMostUsed);
+		MY_ASSERT(pUnused);
+
+		*pUsed = info.uordblks;
+		*pMostUsed = info.usmblks;
+		*pUnused = info.fordblks;
+	}
+}
+
+void *MallocOffscreen(size_t bytes)
+{
+	MY_ASSERT(g_offscreenMspace != 0);
+	mspace_malloc(g_offscreenMspace, bytes);
+}
+
+void *MemalignOffscreen(size_t alignment, size_t bytes)
+{
+	MY_ASSERT(g_offscreenMspace != 0);
+	mspace_memalign(g_offscreenMspace, alignment, bytes);
+}
+
+void FreeOffscreen(void *ptr)
+{
+	MY_ASSERT(g_offscreenMspace != 0);
+	mspace_free(g_offscreenMspace, ptr);
+}
+
+////////////////////////////////
+
+static int blocked = 0;
 Bool PrepareAccess(PixmapPtr pPix, int index)
 {
-	static int run_once = 0;
+//	xf86DrvMsg(0, X_DEFAULT, "%s %p %d\n", __FUNCTION__, pPix, index);
+
+	/*static int run_once = 0;
 	if (!run_once)
 	{
 		run_once = 1;
@@ -57,15 +148,38 @@ Bool PrepareAccess(PixmapPtr pPix, int index)
 		}
 
 	MY_ASSERT(found);
+*/
+	struct RpiPixmapPriv *priv = (struct RpiPixmapPriv *)exaGetPixmapDriverPrivate(pPix);
+	if (!priv)
+		return FALSE;
+
+	if (pPix->drawable.bitsPerPixel & 7)
+		return FALSE;
+
+	WaitMarker(GetScreen(), 0);
+	blocked++;
+
+	MY_ASSERT(priv->m_mapped == 0);
+	priv->m_mapped++;
+
+	pPix->devPrivate.ptr = priv->m_pBuffer;
 
 	return TRUE;
 }
 
 void FinishAccess(PixmapPtr pPix, int index)
 {
-	xf86DrvMsg(0, X_DEFAULT, "%s %p %d\n", __FUNCTION__, pPix, index);
+//	xf86DrvMsg(0, X_DEFAULT, "%s %p %d\n", __FUNCTION__, pPix, index);
 
-	struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(pPix);
+	struct RpiPixmapPriv *priv = (struct RpiPixmapPriv *)exaGetPixmapDriverPrivate(pPix);
+	if (!priv || !priv->m_mapped)
+		return;
+
+	priv->m_mapped--;
+	MY_ASSERT(priv->m_mapped == 0);
+	pPix->devPrivate.ptr = 0;
+
+	/*struct DmaPixmap *pInner = (struct DmaPixmap *)exaGetPixmapDriverPrivate(pPix);
 	MY_ASSERT(pInner);
 	MY_ASSERT(pInner->m_pData);
 
@@ -83,15 +197,46 @@ void FinishAccess(PixmapPtr pPix, int index)
 			break;
 		}
 
-	MY_ASSERT(found);
+	MY_ASSERT(found);*/
+
+	MY_ASSERT(!IsPendingUnkicked());
+	blocked--;
 }
 
 void *CreatePixmap(ScreenPtr pScreen, int size, int align)
 {
-	return 0;
+	struct RpiPixmapPriv *priv = malloc(sizeof(struct RpiPixmapPriv));
+
+	if (!priv)
+		return 0;
+
+	priv->m_pBuffer = 0;
+	priv->m_mapped = 0;
+
+	if (!size)
+		return priv;
+
+	//priv->m_pBuffer = kern_alloc(size);
+	void *ptr = 0;
+	if (align == 0)
+		ptr = MallocOffscreen(size);
+	else
+		MY_ASSERT(0);
+
+	if (ptr)
+	{
+		priv->m_pBuffer = ptr;
+	}
+	else
+	{
+		free(priv);
+		return 0;
+	}
+
+	return priv;
 }
 
-void *CreatePixmap2(ScreenPtr pScreen, int width, int height,
+/*void *CreatePixmap2(ScreenPtr pScreen, int width, int height,
                             int depth, int usage_hint, int bitsPerPixel,
                             int *new_fb_pitch)
 {
@@ -125,27 +270,52 @@ void *CreatePixmap2(ScreenPtr pScreen, int width, int height,
 	}
 
 	return pInner;
-}
+}*/
 
 void DestroyPixmap(ScreenPtr pScreen, void *driverPriv)
 {
-	struct DmaPixmap *pInner = (struct DmaPixmap *)driverPriv;
+	/*struct DmaPixmap *pInner = (struct DmaPixmap *)driverPriv;
 
 	if (!pInner)
 		return;
 
 	free(pInner->m_pData);
-	free(pInner);
+	free(pInner);*/
+
+	struct RpiPixmapPriv *priv = (struct RpiPixmapPriv *)driverPriv;
+
+	if (!priv)
+		return;
+
+	if (priv->m_pBuffer)
+	{
+		WaitMarker(GetScreen(), 0);
+
+		//kern_free(priv->m_pBuffer);
+
+		FreeOffscreen(priv->m_pBuffer);
+
+		priv->m_pBuffer = 0;
+		free(priv);
+	}
 }
 
 Bool PixmapIsOffscreen(PixmapPtr pPix)
 {
-	if (!pPix)
+	/*if (!pPix)
 		return FALSE;
 	if (!exaGetPixmapDriverPrivate(pPix))
 		return FALSE;
 
-	return TRUE;
+	return TRUE;*/
+
+	struct RpiPixmapPriv *priv = (struct RpiPixmapPriv *)exaGetPixmapDriverPrivate(pPix);
+
+	if (!priv)
+		return FALSE;
+	if (priv->m_pBuffer)
+		return TRUE;
+	return FALSE;
 }
 
 Bool ModifyPixmapHeader(PixmapPtr pPixmap, int width, int height,

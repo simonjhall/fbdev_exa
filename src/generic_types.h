@@ -4,7 +4,7 @@
 #ifdef __llvm__
 #define MY_ASSERT(x) if (!(x)) __builtin_trap();
 #else
-#define MY_ASSERT(x) if (!(x)) *(int *)0 = 0;
+#define MY_ASSERT(x) if (!(x)) asm volatile ("bkpt\n");
 #endif
 //#define MY_ASSERT(x) ;
 
@@ -96,8 +96,11 @@ extern "C" {
 //translates from operation to function pointer
 ptr2PdFunc EnumToFunc(const enum PorterDuffOp op,
 		enum PixelFormat source_pf, enum PixelFormat dest_pf, enum PixelFormat mask_pf);
-ptr2PdFunc EnumToFuncVpu(const enum PorterDuffOp op,
-		enum PixelFormat source_pf, enum PixelFormat dest_pf, enum PixelFormat mask_pf);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 struct PackedCompositeOp
 {
@@ -121,11 +124,5 @@ struct PackedCompositeOp
 	unsigned int m_sourceHeight;
 	unsigned int m_sourceWrap;
 };
-
-void VpuComposite(const struct PackedCompositeOp * const pOps, const int numOps);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

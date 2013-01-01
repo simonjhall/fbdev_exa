@@ -17,6 +17,7 @@
 #include "exa_acc.h"
 
 //#define COPY_DEBUG
+#define CALL_RECORDING
 #define COPY_FALLBACK 100
 
 struct CopyDetails
@@ -36,6 +37,9 @@ Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 	xf86DrvMsg(0, X_INFO, "%s pixmaps %p->%p\n", __FUNCTION__, pSrcPixmap, pDstPixmap);
 #endif
 //	return FALSE;
+#ifdef CALL_RECORDING
+	RecordPrepareCopy();
+#endif
 
 	//check they're valid pointers
 	if ((pDstPixmap == NULL) || (pSrcPixmap == NULL))
@@ -44,9 +48,9 @@ Bool PrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int dx,
 		return FALSE;
 	}
 
-	if (exaGetPixmapAddress(pDstPixmap) == 0 && exaGetPixmapAddress(pSrcPixmap) == 0)
+	if (exaGetPixmapAddressNEW(pDstPixmap) == 0 && exaGetPixmapAddressNEW(pSrcPixmap) == 0)
 	{
-		xf86DrvMsg(0, X_WARNING, "%s source %p dest %p\n", __FUNCTION__, exaGetPixmapAddress(pDstPixmap), exaGetPixmapAddress(pSrcPixmap));
+		xf86DrvMsg(0, X_WARNING, "%s source %p dest %p\n", __FUNCTION__, exaGetPixmapAddressNEW(pDstPixmap), exaGetPixmapAddressNEW(pSrcPixmap));
 		return FALSE;
 	}
 
@@ -108,8 +112,8 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 #endif
 	MY_ASSERT(pDstPixmap == g_copyDetails.m_pDst);
 	unsigned char *pSrc, *pDst;
-	pSrc = exaGetPixmapAddress(g_copyDetails.m_pSrc);
-	pDst = exaGetPixmapAddress(g_copyDetails.m_pDst);
+	pSrc = exaGetPixmapAddressNEW(g_copyDetails.m_pSrc);
+	pDst = exaGetPixmapAddressNEW(g_copyDetails.m_pDst);
 
 	unsigned long srcPitch, dstPitch;
 	srcPitch = exaGetPixmapPitch(g_copyDetails.m_pSrc);
@@ -118,6 +122,10 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 #ifdef CB_VALIDATION
 	if (IsPendingUnkicked())
 		ValidateCbList(GetUnkickedDmaHead());
+#endif
+
+#ifdef CALL_RECORDING
+	RecordCopy(width * height);
 #endif
 
 
@@ -165,6 +173,9 @@ void Copy(PixmapPtr pDstPixmap, int srcX, int srcY,
 void DoneCopy(PixmapPtr p)
 {
 	MY_ASSERT(g_copyDetails.m_pDst == p);
+#ifdef CALL_RECORDING
+	RecordDoneCopy();
+#endif
 
 #ifdef COPY_DEBUG
 	xf86DrvMsg(0, X_DEFAULT, "%s pixmap %p\n", __FUNCTION__, p);

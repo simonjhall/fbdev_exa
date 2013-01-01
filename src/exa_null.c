@@ -100,7 +100,7 @@ FILE *GetTimingFile(void)
 
 BOOL GetEventInfo(PixmapPtr p, unsigned int *pPrevIndex, unsigned int *pPrevWait)
 {
-	unsigned int *ptr = (unsigned int *)exaGetPixmapAddress(p);
+	unsigned int *ptr = (unsigned int *)exaGetPixmapAddressNEW(p);
 	unsigned int prev_code = ptr[0];
 	*pPrevIndex = ptr[1];
 	*pPrevWait = ptr[2];
@@ -113,7 +113,7 @@ BOOL GetEventInfo(PixmapPtr p, unsigned int *pPrevIndex, unsigned int *pPrevWait
 
 void SetEventInfo(PixmapPtr p)
 {
-	unsigned int *ptr = (unsigned int *)exaGetPixmapAddress(p);
+	unsigned int *ptr = (unsigned int *)exaGetPixmapAddressNEW(p);
 	ptr[0] = 0x12345678;
 	ptr[1] = GetTimingHits(TRUE);
 	ptr[2] = last_marker;

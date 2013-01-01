@@ -17,6 +17,7 @@
 #include "exa_acc.h"
 
 //#define SOLID_DEBUG
+#define CALL_RECORDING
 #define SOLID_FALLBACK 100
 
 struct SolidDetails
@@ -69,6 +70,10 @@ Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 #endif
 //	return FALSE;
 
+#ifdef CALL_RECORDING
+	RecordPrepareSolid();
+#endif
+
 	//check it's a valid pointer
 	if (pPixmap == NULL)
 	{
@@ -76,9 +81,9 @@ Bool PrepareSolid(PixmapPtr pPixmap, int alu, Pixel planemask,
 		return FALSE;
 	}
 
-	if (exaGetPixmapAddress(pPixmap) == 0)
+	if (exaGetPixmapAddressNEW(pPixmap) == 0)
 	{
-		xf86DrvMsg(0, X_INFO, "%s dest %p\n", __FUNCTION__, exaGetPixmapAddress(pPixmap));
+		xf86DrvMsg(0, X_INFO, "%s dest %p\n", __FUNCTION__, exaGetPixmapAddressNEW(pPixmap));
 		return FALSE;
 	}
 
@@ -130,8 +135,10 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 		ValidateCbList(GetUnkickedDmaHead());
 #endif
 
-	unsigned char *pDst = exaGetPixmapAddress(g_solidDetails.m_pDst);
+	unsigned char *pDst = exaGetPixmapAddressNEW(g_solidDetails.m_pDst);
 	unsigned long dstPitch = exaGetPixmapPitch(g_solidDetails.m_pDst);
+
+	MY_ASSERT(pDst);
 
 	//perform the fill with a 2d blit and non-moving source
 
@@ -142,8 +149,12 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 	//get a new dma block and some solid space
 	unsigned char *pSolid = 0;
 
+
 	if (width * height < SOLID_FALLBACK && !IsPendingUnkicked() && !IsDmaPending())
 	{
+#ifdef CALL_RECORDING
+		RecordSolid(width * height, 1);
+#endif
 		if (bpp == 1)
 		{
 #ifdef SOLID_DEBUG
@@ -160,14 +171,18 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 			FallbackFill32(&pDst[Y1 * dstPitch + X1 * 4], g_solidDetails.m_toFill, width, height, dstPitch);
 			return;
 		}
-		else
-			xf86DrvMsg(0, X_INFO, "fallback unsupported %d\n", bpp);
+//		else
+//			xf86DrvMsg(0, X_INFO, "fallback unsupported %d\n", bpp);
 	}
+
+#ifdef CALL_RECORDING
+	RecordSolid(width * height, 0);
+#endif
 
 	//get some solid space
 	while (!(pSolid = AllocSolidBuffer(32)))
 	{
-		xf86DrvMsg(0, X_INFO, "unable to allocate solid space - kicking and waiting\n");
+//		xf86DrvMsg(0, X_INFO, "unable to allocate solid space - kicking and waiting\n");
 
 #ifdef CB_VALIDATION
 		if (IsPendingUnkicked())
@@ -249,6 +264,10 @@ void Solid(PixmapPtr pPixmap, int X1, int Y1, int X2, int Y2)
 void DoneSolid(PixmapPtr p)
 {
 	MY_ASSERT(g_solidDetails.m_pDst == p);
+
+#ifdef CALL_RECORDING
+	RecordDoneSolid();
+#endif
 
 #ifdef SOLID_DEBUG
 	xf86DrvMsg(0, X_INFO, "%s %p\n", __FUNCTION__, p);

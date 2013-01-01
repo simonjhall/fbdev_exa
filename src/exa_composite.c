@@ -18,15 +18,34 @@
 #include <time.h>
 
 //#define COMPOSITE_DEBUG
-#define DEBUG_REJECTION(...) xf86DrvMsg(0, X_WARNING, __VA_ARGS__)
-//#define DEBUG_REJECTION(...)
+#define CALL_RECORDING
+
+//#define DEBUG_REJECTION(...) xf86DrvMsg(0, X_WARNING, __VA_ARGS__)
+#define DEBUG_REJECTION(...)
+
+//#define DEBUG_VPU_REJECTION(...) xf86DrvMsg(0, X_WARNING, __VA_ARGS__)
+#define DEBUG_VPU_REJECTION(...)
+
+//#define DEBUG_VPU_HYSTERESIS(...) xf86DrvMsg(0, X_INFO, __VA_ARGS__)
+#define DEBUG_VPU_HYSTERESIS(...)
+
+#define PIXEL_COUNT_THRESHOLD 600
 
 //work to be run
 //guh, const in c does not mean constant...
-#define MAX_COMP_OPS 200
+#define MAX_COMP_OPS 128
+
+//for use when vpu offload is disabled
 static struct CompositeOp g_opList[MAX_COMP_OPS];
+
 unsigned int g_pendingOps = 0;
-ptr2PdFunc g_pCompositor;
+ptr2PdFunc g_pCompositorCpu;
+ptr2PdFunc g_pCompositorVpu;
+unsigned int g_pixelsToProcess;
+
+//vpu versions
+//struct PackedCompositeOp g_packed;
+BOOL g_usingVpu;
 
 //////////////
 static PicturePtr g_pSrcPicture;
@@ -35,6 +54,34 @@ static PicturePtr g_pDstPicture;
 static PixmapPtr g_pSrc;
 static PixmapPtr g_pMask;
 static PixmapPtr g_pDst;
+//////////////
+static struct CompositeOp *GetOpListBase(void)
+{
+	static struct CompositeOp *pBase = 0;
+
+	if (!pBase)
+	{
+		if (IsEnabledVpuOffload())
+			pBase = (struct CompositeOp *)((unsigned long)GetVpuMemoryBase() + GetVpuCodeSize() - 4096 * 2);
+		else
+			pBase = g_opList;
+	}
+
+	return pBase;
+}
+
+static struct PackedCompositeOp *GetPackedOpListBase(void)
+{
+	static struct PackedCompositeOp *pBase = 0;
+
+	if (!pBase)
+	{
+		MY_ASSERT(IsEnabledVpuOffload());
+		pBase = (struct PackedCompositeOp *)((unsigned long)GetVpuMemoryBase() + GetVpuCodeSize() - 4096 * 3);
+	}
+
+	return pBase;
+}
 //////////////
 
 int WritePPMRGBA(const char *filename, const int width, const int height, const int stride, const unsigned char *pImage)
@@ -117,6 +164,9 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 	xf86DrvMsg(0, X_DEFAULT, "%s source %p + mask %p -> dest %p\n", __FUNCTION__, pSrcPicture, pMaskPicture, pDstPicture);
 #endif
 //	return FALSE;
+#ifdef CALL_RECORDING
+	RecordCheckComposite();
+#endif
 
 	//check operations accelerated
 	if (op != PictOpOver && op != PictOpAdd && op != PictOpSrc/* && op != PictOpOutReverse*/)
@@ -163,13 +213,61 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 		return FALSE;
 	}
 
+	//reset the compositors
+	g_pCompositorCpu = 0;
+	g_pCompositorVpu = 0;
+	g_pixelsToProcess = 0;
+
+	//repeat flag + no drawable = ok
+	//repeat flag + drawable 1x1 = ok
+	//repeat flag + drawable >1x1 = not ok
+	BOOL source_wrap_reqd2 = pSrcPicture->repeat && (!pSrcPicture->pDrawable || pSrcPicture->pDrawable->width != 1 || pSrcPicture->pDrawable->height != 1);
+	BOOL source_wrap_reqd = pSrcPicture->repeat && pSrcPicture->pDrawable && (pSrcPicture->pDrawable->width > 1 || pSrcPicture->pDrawable->height > 1);
+
+	if (source_wrap_reqd != source_wrap_reqd2)
+		fprintf(stderr, "systems disagree %d %d\n", source_wrap_reqd, source_wrap_reqd2);
+
 	//get our composite function
-	g_pCompositor = EnumToFunc(op,
+	if (!IsEnabledVpuOffload() || source_wrap_reqd || !(g_pCompositorVpu = EnumToFuncVpuWrap(op,
 				pSrcPicture->format, pDstPicture->format,
-				maskpf);
+				maskpf)))
+	{
+		//this is the failed or disabled vpu path
+		DEBUG_VPU_REJECTION("vpu reject: op %d, format %08x/%08x/%08x, repeat %d w/h %dx%d\n",
+				op,
+				pSrcPicture->format, pDstPicture->format,
+				pMaskPicture ? pMaskPicture->format : 0,
+				pSrcPicture->repeat,
+				pSrcPicture->pDrawable ? pSrcPicture->pDrawable->width : -1,
+				pSrcPicture->pDrawable ? pSrcPicture->pDrawable->height : -1);
+
+		//vpu should be disabled or our reference version should also fail
+//		MY_ASSERT(!IsEnabledVpuOffload() || !EnumToFuncVpu(op, pSrcPicture->format, pDstPicture->format, maskpf));
+
+		//just get the cpu compositor
+		g_pCompositorCpu = EnumToFunc(op,
+					pSrcPicture->format, pDstPicture->format,
+					maskpf);
+
+		g_usingVpu = FALSE;
+	}
+	else
+	{
+		//successful vpu path
+//		ptr2PdFunc func = EnumToFuncVpu(op,
+//				pSrcPicture->format, pDstPicture->format,
+//				maskpf);
+//		MY_ASSERT(func);
+		g_usingVpu = TRUE;
+
+		//get the backup cpu route
+		g_pCompositorCpu = EnumToFunc(op,
+					pSrcPicture->format, pDstPicture->format,
+					maskpf);
+	}
 
 	//if possible...
-	if (!g_pCompositor)
+	if (!g_pCompositorCpu && !g_pCompositorVpu )
 	{
 		DEBUG_REJECTION("reject: op %d, format %08x/%08x/%08x\n",
 				op,
@@ -178,11 +276,19 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 
 		return FALSE;
 	}
-//	else
-//		xf86DrvMsg(0, X_INFO, "accept: op %d, format %08x/%08x/%08x\n",
-//				op,
-//				pSrcPicture->format, pDstPicture->format,
-//				pMaskPicture ? pMaskPicture->format : 0);
+#ifdef COMPOSITE_DEBUG
+	else
+		if (g_usingVpu)
+		xf86DrvMsg(0, X_INFO, "accept: op %d, format %08x/%08x/%08x, compo %p & %p, vpu %s, rep %d w/h %dx%d\n",
+				op,
+				pSrcPicture->format, pDstPicture->format,
+				pMaskPicture ? pMaskPicture->format : 0,
+				g_pCompositorCpu, g_pCompositorVpu,
+				g_usingVpu ? "ON" : "OFF",
+				pSrcPicture->repeat,
+				pSrcPicture->pDrawable ? pSrcPicture->pDrawable->width : -1,
+				pSrcPicture->pDrawable ? pSrcPicture->pDrawable->height : -1);
+#endif
 
 	return TRUE;
 //	return FALSE;
@@ -193,6 +299,10 @@ Bool PrepareComposite(int op, PicturePtr pSrcPicture,
 		PixmapPtr pMask, PixmapPtr pDst)
 {
 	MY_ASSERT(pDst);
+
+#ifdef CALL_RECORDING
+	RecordPrepareComposite();
+#endif
 
 #ifdef COMPOSITE_DEBUG
 	xf86DrvMsg(0, X_DEFAULT, "%s op %d source %p + mask %p -> dest %p\n", __FUNCTION__, op, pSrcPicture, pMaskPicture, pDstPicture);
@@ -235,16 +345,19 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 #endif
 
 	//record the state in the list
-	g_opList[g_pendingOps].srcX = srcX;
-	g_opList[g_pendingOps].srcY = srcY;
 
-	g_opList[g_pendingOps].maskX = maskX;
-	g_opList[g_pendingOps].maskY = maskY;
+	struct CompositeOp *pOp = &GetOpListBase()[g_pendingOps];
 
-	g_opList[g_pendingOps].dstX = dstX;
-	g_opList[g_pendingOps].dstY = dstY;
+	pOp->srcX = srcX;
+	pOp->srcY = srcY;
 
-	if (g_pSrc && g_pSrc->drawable.width > 1 && g_pSrc->drawable.height > 1)
+	pOp->maskX = maskX;
+	pOp->maskY = maskY;
+
+	pOp->dstX = dstX;
+	pOp->dstY = dstY;
+
+	if (!g_pSrcPicture->repeat && g_pSrc && g_pSrc->drawable.width > 1 && g_pSrc->drawable.height > 1)
 	{
 		//compute last read source pixel
 		int last_x = srcX + width;
@@ -263,8 +376,13 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 		}
 	}
 
-	g_opList[g_pendingOps].width = width;
-	g_opList[g_pendingOps].height = height;
+	pOp->width = width;
+	pOp->height = height;
+
+	g_pixelsToProcess += width * height;
+#ifdef CALL_RECORDING
+	RecordComposite(width * height);
+#endif
 
 	g_pendingOps++;
 
@@ -283,21 +401,21 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 	WaitMarker(GetScreen(), 0);
 
 	if (g_pSrcPicture->format == kA8)
-		WritePGMGrey(filename_src, g_pSrc->drawable.width, g_pSrc->drawable.height, exaGetPixmapPitch(g_pSrc), exaGetPixmapAddress(g_pSrc));
+		WritePGMGrey(filename_src, g_pSrc->drawable.width, g_pSrc->drawable.height, exaGetPixmapPitch(g_pSrc), exaGetPixmapAddressNEW(g_pSrc));
 	if (g_pDstPicture->format == kA8)
-		WritePGMGrey(filename_dest, g_pDst->drawable.width, g_pDst->drawable.height, exaGetPixmapPitch(g_pDst), exaGetPixmapAddress(g_pDst));
+		WritePGMGrey(filename_dest, g_pDst->drawable.width, g_pDst->drawable.height, exaGetPixmapPitch(g_pDst), exaGetPixmapAddressNEW(g_pDst));
 	if (g_pMaskPicture && g_pMaskPicture->format == kA8)
-		WritePGMGrey(filename_mask, g_pMask->drawable.width, g_pMask->drawable.height, exaGetPixmapPitch(g_pMask), exaGetPixmapAddress(g_pMask));
+		WritePGMGrey(filename_mask, g_pMask->drawable.width, g_pMask->drawable.height, exaGetPixmapPitch(g_pMask), exaGetPixmapAddressNEW(g_pMask));
 
 	g_pCompositor(g_opList, g_pendingOps,
-				exaGetPixmapAddress(g_pSrc), exaGetPixmapAddress(pDst), g_pMask ? exaGetPixmapAddress(g_pMask) : 0,
+				exaGetPixmapAddressNEW(g_pSrc), exaGetPixmapAddressNEW(pDst), g_pMask ? exaGetPixmapAddressNEW(g_pMask) : 0,
 				exaGetPixmapPitch(g_pSrc), exaGetPixmapPitch(pDst), g_pMask ? exaGetPixmapPitch(g_pMask) : 0,
 				g_pSrc->drawable.width, g_pSrc->drawable.height,
 				g_pSrcPicture->repeat);
 	g_pendingOps = 0;
 
 	if (g_pDstPicture->format == kA8)
-		WritePGMGrey(filename_dest2, g_pDst->drawable.width, g_pDst->drawable.height, exaGetPixmapPitch(g_pDst), exaGetPixmapAddress(g_pDst));
+		WritePGMGrey(filename_dest2, g_pDst->drawable.width, g_pDst->drawable.height, exaGetPixmapPitch(g_pDst), exaGetPixmapAddressNEW(g_pDst));
 */
 
 	//out of space, do now
@@ -314,22 +432,27 @@ void Composite(PixmapPtr pDst, int srcX, int srcY, int maskX,
 
 		//source data selector
 		if (g_pSrc)
-			source = exaGetPixmapAddress(g_pSrc);
+			source = exaGetPixmapAddressNEW(g_pSrc);
 		else
 			source = (unsigned char *)&g_pSrcPicture->pSourcePict->solidFill.color;
 
 		//dest should always be legit
-		dest = exaGetPixmapAddress(pDst);
+		dest = exaGetPixmapAddressNEW(pDst);
 
 		//mask data selector
 		if (g_pMask)								//exa mask
-			mask = exaGetPixmapAddress(g_pMask);
+			mask = exaGetPixmapAddressNEW(g_pMask);
 		else if (g_pMaskPicture)					//solid picture mask
 			mask = (unsigned char *)&g_pMaskPicture->pSourcePict->solidFill.color;
 		//else no mask (mask = 0, see above)
 
-		MY_ASSERT(g_pCompositor);
-		g_pCompositor(g_opList, g_pendingOps,
+#ifdef CALL_RECORDING
+		RecordDoneComposite(g_pixelsToProcess, 0);
+#endif
+
+		//todo - add the vpu path
+		MY_ASSERT(g_pCompositorCpu);
+		g_pCompositorCpu(GetOpListBase(), g_pendingOps,
 						source,
 						dest,
 						mask,
@@ -373,32 +496,76 @@ void DoneComposite(PixmapPtr pDst)
 
 		//source data selector
 		if (g_pSrc)
-			source = exaGetPixmapAddress(g_pSrc);
+			source = exaGetPixmapAddressNEW(g_pSrc);
 		else
 			source = (unsigned char *)&g_pSrcPicture->pSourcePict->solidFill.color;
 
 		//dest should always be legit
-		dest = exaGetPixmapAddress(pDst);
+		dest = exaGetPixmapAddressNEW(pDst);
 
 		//mask data selector
 		if (g_pMask)								//exa mask
-			mask = exaGetPixmapAddress(g_pMask);
+			mask = exaGetPixmapAddressNEW(g_pMask);
 		else if (g_pMaskPicture)					//solid picture mask
 			mask = (unsigned char *)&g_pMaskPicture->pSourcePict->solidFill.color;
 		//else no mask (mask = 0, see above)
 
-		MY_ASSERT(g_pCompositor);
-		g_pCompositor(g_opList, g_pendingOps,
-						source,
-						dest,
-						mask,
+		MY_ASSERT(g_pCompositorCpu || g_pCompositorVpu);
 
-						g_pSrc ? exaGetPixmapPitch(g_pSrc) : 0,																			//no pitch on solid
-						exaGetPixmapPitch(pDst),
-						g_pMask ? exaGetPixmapPitch(g_pMask) : 0,																		//only pitch on exa mask
+		//final check to see if we should do the work
+		if (g_usingVpu && g_pixelsToProcess < PIXEL_COUNT_THRESHOLD)
+		{
+			DEBUG_VPU_HYSTERESIS("insufficient pixels to bother with VPU path (%d)\n", g_pixelsToProcess);
+			g_usingVpu = 0;
+		}
 
-						g_pSrc ? g_pSrc->drawable.width : 1, g_pSrc ? g_pSrc->drawable.height : 1,										//solid or not
-						g_pSrcPicture->repeat);
+		//if we're actually going to use the vpu, pack up the data
+		if (g_usingVpu)
+		{
+			struct PackedCompositeOp *pPacked = GetPackedOpListBase();
+			pPacked->m_pCompositor = g_pCompositorVpu;
+			pPacked->m_pOp = GetOpListBase();
+			pPacked->m_numOps = g_pendingOps;
+
+			pPacked->m_pSource = source;
+			pPacked->m_pDest = dest;
+			pPacked->m_pMask = mask;
+
+			pPacked->m_sourceStride = g_pSrc ? exaGetPixmapPitch(g_pSrc) : 0;
+			pPacked->m_destStride = exaGetPixmapPitch(pDst);
+			pPacked->m_maskStride = g_pMask ? exaGetPixmapPitch(g_pMask) : 0;
+
+			pPacked->m_sourceWidth = g_pSrc ? g_pSrc->drawable.width : 1;
+			pPacked->m_sourceHeight = g_pSrc ? g_pSrc->drawable.height : 1;
+			pPacked->m_sourceWrap = g_pSrcPicture->repeat;
+
+			MY_ASSERT(((unsigned long)dest & 3) == 0);
+			MY_ASSERT(((unsigned long)source & 3) == 0);
+
+#ifdef CALL_RECORDING
+			RecordDoneComposite(g_pixelsToProcess, 1);
+#endif
+
+			VpuCompositeWrap(pPacked, 1);
+		}
+		else
+		{	//else just kick the work
+#ifdef CALL_RECORDING
+			RecordDoneComposite(g_pixelsToProcess, 0);
+#endif
+			g_pCompositorCpu(GetOpListBase(), g_pendingOps,
+							source,
+							dest,
+							mask,
+
+							g_pSrc ? exaGetPixmapPitch(g_pSrc) : 0,																			//no pitch on solid
+							exaGetPixmapPitch(pDst),
+							g_pMask ? exaGetPixmapPitch(g_pMask) : 0,																		//only pitch on exa mask
+
+							g_pSrc ? g_pSrc->drawable.width : 1, g_pSrc ? g_pSrc->drawable.height : 1,										//solid or not
+							g_pSrcPicture->repeat);
+		}
+
 		g_pendingOps = 0;
 	}
 }

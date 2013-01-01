@@ -401,7 +401,7 @@ void vpu_over_a8r8g8b8_x8b8g8r8_a8_valid(struct CompositeOp *pOpList, const unsi
 
 //vpu entry point to be called by the cpu
 //actually performs the composition
-void VpuComposite(const struct PackedCompositeOp * const pOps, const int numOps)
+void VpuComposite(struct PackedCompositeOp * const pOps, const int numOps)
 {
 	//loop through each packed operation
 	for (int count = 0; count < numOps; count++)

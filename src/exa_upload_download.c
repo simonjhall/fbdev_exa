@@ -16,6 +16,7 @@
 #include "exa.h"
 
 //#define UPDOWNLOAD_DEBUG
+#define CALL_RECORDING
 #define UPDOWNLOAD_FALLBACK 100
 
 struct UpDownloadDetails
@@ -30,7 +31,7 @@ struct UpDownloadDetails
 
 static inline void Download(struct UpDownloadDetails *p, int fallback)
 {
-	unsigned char *src = exaGetPixmapAddress(p->m_pPixmap);
+	unsigned char *src = exaGetPixmapAddressNEW(p->m_pPixmap);
 	int bpp = p->m_pPixmap->drawable.bitsPerPixel / 8;
 	unsigned long src_pitch = exaGetPixmapPitch(p->m_pPixmap);
 
@@ -57,7 +58,7 @@ static inline void Download(struct UpDownloadDetails *p, int fallback)
 
 static inline void Upload(struct UpDownloadDetails *p, int fallback)
 {
-	unsigned char *dst = exaGetPixmapAddress(p->m_pPixmap);
+	unsigned char *dst = exaGetPixmapAddressNEW(p->m_pPixmap);
 	int bpp = p->m_pPixmap->drawable.bitsPerPixel / 8;
 	unsigned long dst_pitch = exaGetPixmapPitch(p->m_pPixmap);
 
@@ -99,10 +100,19 @@ Bool DownloadFromScreen(PixmapPtr pSrc, int x, int y, int w, int h,
 	g_upDownloadDetails.m_pitch = dst_pitch;
 	g_upDownloadDetails.m_pImage = dst;
 
+
 	if (w * h < UPDOWNLOAD_FALLBACK && !IsPendingUnkicked() && !IsDmaPending())
+	{
+#ifdef CALL_RECORDING
+		RecordDownload(w * h, 1);
+#endif
 		Download(&g_upDownloadDetails, 1);
+	}
 	else
 	{
+#ifdef CALL_RECORDING
+		RecordDownload(w * h, 0);
+#endif
 		Download(&g_upDownloadDetails, 0);
 
 		//mark as async work done
@@ -129,6 +139,10 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 	xf86DrvMsg(0, X_INFO, "%s %p<-%p (%d,%d %dx%d)\n", __FUNCTION__, pDst, src, x, y, w, h);
 #endif
 
+#ifdef CALL_RECORDING
+	RecordUpload(w * h);
+#endif
+
 	g_upDownloadDetails.m_up = TRUE;
 	g_upDownloadDetails.m_pPixmap = pDst;
 	g_upDownloadDetails.m_x = x;
@@ -137,6 +151,13 @@ Bool UploadToScreen(PixmapPtr pDst, int x, int y, int w, int h,
 	g_upDownloadDetails.m_h = h;
 	g_upDownloadDetails.m_pitch = src_pitch;
 	g_upDownloadDetails.m_pImage = src;
+
+	if (!exaGetPixmapAddressNEW(pDst))
+	{
+		struct RpiPixmapPriv *priv = (struct RpiPixmapPriv *)exaGetPixmapDriverPrivate(pDst);
+		fprintf(stderr, "no pointer, priv is %p\n", priv);
+		MY_ASSERT(0);
+	}
 
 	if (w * h < UPDOWNLOAD_FALLBACK && !IsPendingUnkicked() && !IsDmaPending())
 		Upload(&g_upDownloadDetails, 1);

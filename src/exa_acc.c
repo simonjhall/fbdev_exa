@@ -16,6 +16,8 @@
 
 //#define EMULATE_DMA
 
+#define CALL_RECORDING
+
 /******** GENERIC STUFF ******/
 
 ScreenPtr g_pScreen = 0;
@@ -66,6 +68,11 @@ void ClearBytesPending(void)
 	g_bytesPending = 0;
 }
 
+unsigned int GetCbsPending(void)
+{
+	return g_dmaTail - g_dmaUnkickedHead;
+}
+
 unsigned int GetBytesPending(void)
 {
 	return g_bytesPending;
@@ -89,6 +96,7 @@ BOOL IsDmaPending(void)
 /**** validation ****/
 void ValidateCbList(struct DmaControlBlock *pCB)
 {
+	int count = 0;
 	while (pCB)
 	{
 		unsigned char *pSource = (unsigned char *)pCB->m_pSourceAddr;
@@ -99,7 +107,13 @@ void ValidateCbList(struct DmaControlBlock *pCB)
 		MY_ASSERT((*(volatile unsigned char *)pDest, 1));
 
 		pCB = pCB->m_pNext;
+
+		count++;
 	}
+
+#ifdef CALL_RECORDING
+	RecordCbValidate(count);
+#endif
 }
 
 /**** starting ******/
@@ -149,7 +163,9 @@ inline BOOL WaitDma(BOOL force)
 	else
 		g_unforcedWaits++;
 
-	if (force || (GetBytesPending() >= 8192))
+//	fprintf(stderr, "%d bytes pending %d cbs pending\n", GetBytesPending(), GetCbsPending());
+
+	if (force || (GetBytesPending() >= 8192) || (GetCbsPending() >= 100))
 	{
 #ifdef EMULATE_DMA
 		EmulateWaitDma();
@@ -259,7 +275,7 @@ unsigned char *AllocSolidBuffer(unsigned int bytes)
 
 	if (g_solidOffset + bytes >= solid_size)
 	{
-		xf86DrvMsg(0, X_INFO, "ran out of solid space...hopefully flushing\n");
+//		xf86DrvMsg(0, X_INFO, "ran out of solid space...hopefully flushing\n");
 		return 0;
 	}
 
@@ -292,6 +308,12 @@ unsigned long g_devMemBaseHigh = 0;
 
 static CARD8 *g_pOffscreenBase = 0;
 static unsigned long g_offscreenSize = 0;
+static unsigned long g_vpuCodeSize = 0;
+static void *g_pVpuMemoryBase = 0;
+
+static unsigned long g_busOffset = 0;
+
+BOOL g_vpuOffload = FALSE;
 
 static FILE *dev_mem_file = 0;
 
@@ -325,15 +347,23 @@ int CreateOffscreenMemory(enum OffscreenMemMode m)
 		g_devMemBaseHigh = g_devMemBase + g_offscreenSize;
 
 		//map in the reserved piece of memory *with a virtual address that looks exactly the same as the physical address*
-		void *ptr = mmap((void *)offset, size,
+		void *ptr = mmap((void *)offset, size + g_vpuCodeSize,
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				fileno(dev_mem_file),
 				offset);
 
 		if (ptr != (void *)offset)
-			kern_set_min_max_phys(ptr, (void *)((unsigned long)ptr + size), offset - (unsigned long)ptr + 0x40000000);
+		{
+			g_busOffset = offset - (unsigned long)ptr + 0x40000000;
+			kern_set_min_max_phys(ptr, (void *)((unsigned long)ptr + size), g_busOffset);
+			MY_ASSERT(!IsEnabledVpuOffload());
+		}
 		else
-			kern_set_min_max_phys((void *)offset, (void *)(offset + size), 0x40000000);		//add this to get the 0x4 bus address
+		{
+			g_busOffset = 0x40000000;
+			kern_set_min_max_phys((void *)offset, (void *)(offset + size), g_busOffset);		//add this to get the 0x4 bus address
+			g_pVpuMemoryBase = (void *)&((unsigned char *)ptr)[size];
+		}
 
 		g_pOffscreenBase = (CARD8 *)ptr;
 
@@ -357,7 +387,7 @@ int CreateOffscreenMemory(enum OffscreenMemMode m)
 		}
 
 		//try and allocate the memory from VC
-		void *arm_phys = kern_cma_set_size(g_offscreenSize);
+		void *arm_phys = kern_cma_set_size(g_offscreenSize + g_vpuCodeSize);
 
 		if (!arm_phys)
 		{
@@ -368,15 +398,23 @@ int CreateOffscreenMemory(enum OffscreenMemMode m)
 		unsigned long size = g_offscreenSize;
 
 		//map in the reserved piece of memory *with a virtual address that looks exactly the same as the physical address*
-		void *ptr = mmap(arm_phys, size,
+		void *ptr = mmap(arm_phys, size + g_vpuCodeSize,
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				fileno(dev_mem_file),
 				(unsigned long)arm_phys);
 
 		if (ptr != arm_phys)
-			kern_set_min_max_phys(ptr, (void *)((unsigned long)ptr + size), (unsigned long)arm_phys - (unsigned long)ptr);
+		{
+			g_busOffset = (unsigned long)arm_phys - (unsigned long)ptr;
+			kern_set_min_max_phys(ptr, (void *)((unsigned long)ptr + size), g_busOffset);
+			MY_ASSERT(!IsEnabledVpuOffload());
+		}
 		else
-			kern_set_min_max_phys(arm_phys, (void *)((unsigned long)arm_phys + size), 0);		//should include the prefix to choose which region we're in
+		{
+			g_busOffset = 0;
+			kern_set_min_max_phys(arm_phys, (void *)((unsigned long)arm_phys + size), g_busOffset);		//should include the prefix to choose which region we're in
+			g_pVpuMemoryBase = (void *)&((unsigned char *)ptr)[size];
+		}
 
 		g_devMemBase = (unsigned long)ptr;
 		//the first byte we can't read
@@ -407,6 +445,17 @@ void *GetMemoryBase(void)
 {
 	MY_ASSERT(g_pOffscreenBase);
 	return g_pOffscreenBase;
+}
+
+void *GetVpuMemoryBase(void)
+{
+	MY_ASSERT(IsEnabledVpuOffload());
+	return g_pVpuMemoryBase;
+}
+
+unsigned long GetBusOffset(void)
+{
+	return g_busOffset;
 }
 
 void FreeMemoryBase(void)
@@ -447,6 +496,33 @@ void SetMemorySize(unsigned long s)
 	MY_ASSERT(!g_pOffscreenBase);
 }
 
+void SetVpuCodeSize(unsigned long s)
+{
+	//round it up to a page
+	g_vpuCodeSize = (s + 4095) & ~4095;
+
+	//and add one just for some slack (unpacked solids)
+	g_vpuCodeSize += 4096;
+
+	//and another two for composite ops
+	g_vpuCodeSize += 4096 * 2;
+}
+
+unsigned long GetVpuCodeSize(void)
+{
+	return g_vpuCodeSize;
+}
+
+void EnableVpuOffload(BOOL b)
+{
+	g_vpuOffload = b;
+}
+
+BOOL IsEnabledVpuOffload(void)
+{
+	return g_vpuOffload;
+}
+
 int MarkSync(ScreenPtr pScreen)
 {
 	static int marker = 0;
@@ -461,6 +537,7 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 //	static int dmas = 0;
 	//int kick = RunDma(g_pDmaBuffer);
 //	int kick = StartDma(g_pDmaBuffer);
+
 	if (IsPendingUnkicked())
 	{
 		StartDma(GetUnkickedDmaHead(), TRUE);
@@ -478,13 +555,27 @@ void WaitMarker(ScreenPtr pScreen, int Marker)
 	g_dmaUnkickedHead = 0;	//and the head of any work starts again at zero
 	g_headOfDma = TRUE;			//patch up -1 CB next pointers
 
-	static unsigned int last_starts = 0;
-	if (g_actualStarts - last_starts > 1000)
+//	static unsigned int last_starts = 0;
+//	if (g_actualStarts - last_starts > 1000)
+//	{
+//		last_starts = g_actualStarts;
+//		xf86DrvMsg(0, X_INFO, "actual s/w %d %d, forced s/w %d %d, unforced s/w %d %d, average kick %d %d bytes\n",
+//				g_actualStarts, g_actualWaits, g_forcedStarts, g_forcedWaits, g_unforcedStarts, g_unforcedWaits,
+//				g_totalBytesPendingForced / g_forcedStarts, g_totalBytesPendingUnforced / g_unforcedStarts);
+//	}
+
+#ifdef CALL_RECORDING
+	RecordWait(0);
+
+	static int calls = 0;
+	if (calls > 50)
 	{
-		last_starts = g_actualStarts;
-		xf86DrvMsg(0, X_INFO, "actual s/w %d %d, forced s/w %d %d, unforced s/w %d %d, average kick %d %d bytes\n",
-				g_actualStarts, g_actualWaits, g_forcedStarts, g_forcedWaits, g_unforcedStarts, g_unforcedWaits,
-				g_totalBytesPendingForced / g_forcedStarts, g_totalBytesPendingUnforced / g_unforcedStarts);
+		calls = 0;
+		RecordPrint();
+		RecordReset();
 	}
+	else
+		calls++;
+#endif
 }
 
