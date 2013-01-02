@@ -79,6 +79,12 @@ typedef enum
 	OPTION_FAULT_IN_IMM,
 	OPTION_BASE_MEM,
 	OPTION_MEM_MODE,
+	OPTION_VPU_OFFLOAD,
+	OPTION_VPU_CODE,
+	OPTION_MBOX_FILE,
+	OPTION_VERBOSE_REPORTING,
+	OPTION_SELF_MANAGED_OFFSCREEN,
+
 } FBDevOpts;
 
 static const OptionInfoRec FBDevOptions[] =
@@ -88,6 +94,12 @@ static const OptionInfoRec FBDevOptions[] =
 	{ OPTION_ALLOC_BLOCK, "BlockSize", OPTV_INTEGER, { 0 }, FALSE },
 	{ OPTION_BASE_MEM, "BlockBase", OPTV_INTEGER, { 0 }, FALSE },
 	{ OPTION_MEM_MODE, "MemMode", OPTV_STRING, { 0 }, FALSE },
+	{ OPTION_VPU_OFFLOAD, "VpuOffload", OPTV_BOOLEAN, { 0 }, FALSE },
+	{ OPTION_MBOX_FILE, "MboxFile", OPTV_STRING, { 0 }, FALSE },
+	{ OPTION_VPU_CODE, "VpuElf", OPTV_STRING, { 0 }, FALSE },
+	{ OPTION_VERBOSE_REPORTING, "VerboseReporting", OPTV_BOOLEAN, { 0 }, FALSE },
+	{ OPTION_SELF_MANAGED_OFFSCREEN, "SelfManagedOffscreen", OPTV_BOOLEAN, { 0 }, FALSE },
+
 	{ -1, NULL, OPTV_NONE, { 0 }, FALSE }
 };
 
@@ -252,6 +264,8 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 	if (pScrn->numEntities != 1)
 		return FALSE;
 
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Raspberry Pi Xorg driver build date %s build time %s\n", __DATE__, __TIME__);
+
 	pScrn->monitor = pScrn->confScreen->monitor;
 
 	FBDevGetRec(pScrn);
@@ -307,7 +321,7 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 		}
 	}
 
-	pScrn->progClock = TRUE;
+	pScrn->progClock = FALSE;
 	pScrn->rgbBits = 8;
 	pScrn->chipset = "fbdev";
 	pScrn->videoRam = fbdevHWGetVidmem(pScrn);
@@ -354,6 +368,9 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 		xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
 				"failed to initialise kernel interface (does /dev/dmaer_4k exist?)\n");
 		return FALSE;
+	case 3:
+		xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Incompatible dmaer version\n");
+		return FALSE;
 	default:
 		MY_ASSERT(0);
 		return FALSE;
@@ -388,6 +405,101 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 				buffer_size, (float) buffer_size / 1048576);
 		SetMemorySize(buffer_size);
 
+		//toggle the dumping of recording info
+		if (xf86ReturnOptValBool(fPtr->Options, OPTION_VERBOSE_REPORTING, FALSE))
+			RecordToggle(TRUE);
+		else
+			RecordToggle(FALSE);
+
+		//find out if we're using vpu offload (off by default)
+		if (xf86ReturnOptValBool(fPtr->Options, OPTION_VPU_OFFLOAD, FALSE))
+		{
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Attempting to open VCIO mailbox\n");
+
+			s = xf86GetOptValString(fPtr->Options, OPTION_MBOX_FILE);
+
+			//try and open the file if it has been provided
+			if (!s || (s && OpenVcMbox(s)))
+			{
+				xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to open VCIO mailbox via device file \"%s\"\n", s);
+				return FALSE;
+			}
+
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Attempting to load VPU code\n");
+
+			//locate the vpu code
+			s = xf86GetOptValString(fPtr->Options, OPTION_VPU_CODE);
+
+			//check they've supplied the option
+			if (!s)
+			{
+				xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "No VpuElf section in configuration file\n");
+				CloseVcMbox();
+				return FALSE;
+			}
+
+			//get the size needed to be reserved in gpu-visible memory
+			unsigned int space_needed = LoadVcCode(s, 1, -1);
+
+			if (!space_needed)
+			{
+				xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "File failed to load from \"%s\" or is zero bytes in length\n", s);
+				CloseVcMbox();
+				return FALSE;
+			}
+
+			//add sub-programs
+			/*s = xf86GetOptValString(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalid);
+			if (s)
+			{
+				int patch;
+				if (!xf86GetOptValInteger(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalidPatch, &patch))
+				{
+					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Sub binary supplied but with no patch address\n");
+					CloseVcMbox();
+					return FALSE;
+				}
+
+				space_needed += LoadVcCode(s, 0, patch);
+			}
+			s = xf86GetOptValString(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_a8_valid_nonvarying);
+			if (s)
+			{
+				int patch;
+				if (!xf86GetOptValInteger(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_a8_valid_nonvaryingPatch, &patch))
+				{
+					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Sub binary supplied but with no patch address\n");
+					CloseVcMbox();
+					return FALSE;
+				}
+
+				space_needed += LoadVcCode(s, 0, patch);
+			}
+			s = xf86GetOptValString(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalid_normal);
+			if (s)
+			{
+				int patch;
+				if (!xf86GetOptValInteger(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalid_normalPatch, &patch))
+				{
+					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Sub binary supplied but with no patch address\n");
+					CloseVcMbox();
+					return FALSE;
+				}
+
+				space_needed += LoadVcCode(s, 0, patch);
+			}
+			s = xf86GetOptValString(fPtr->Options, OPTION_VpuComposite);
+			if (s)
+			{
+				space_needed += LoadVcCode(s, 0, -1);
+			}*/
+
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "%d bytes of GPU-visible memory needed for VPU code\n", space_needed);
+
+			SetVpuCodeSize(space_needed);
+			EnableVpuOffload(TRUE);
+		}
+
 		//find the way in which we're going to get this memory
 		s = xf86GetOptValString(fPtr->Options, OPTION_MEM_MODE);
 
@@ -404,6 +516,15 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 			//no extra options needed bar the size
 			if (CreateOffscreenMemory(kDevDmaer))
 				return FALSE;
+
+			if (IsEnabledVpuOffload())
+			{
+				xf86DrvMsg(pScrn->scrnIndex, X_WARNING, "VPU offload is not compatible with physically discontinuous memory, disabling\n");
+
+				EnableVpuOffload(FALSE);
+				UnloadVcCode();
+				CloseVcMbox();
+			}
 		}
 		else if (s && !xf86NameCmp(s, "mem"))
 		{
@@ -431,11 +552,14 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 			//and try and open it
 			if (CreateOffscreenMemory(kDevMem))
 				return FALSE;
+
 		}
-		else if (s && !xf86NameCmp(s, "cma"))
+		else if (s && !xf86NameCmp(s, "vc"))
 		{
 			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
-					"Virtually contiguous physically contiguous memory via /dev/dmaer_4k and VideoCore CMA interface selected\n");
+					"Virtually contiguous physically contiguous memory via /dev/dmaer_4k and VideoCore interface selected\n");
+			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
+					"Either from static memory allocation or CMA\n");
 
 			//no extra options needed bar the size
 			if (CreateOffscreenMemory(kCma))
@@ -443,10 +567,84 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 		}
 		else
 		{
-			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "unknown memory mode %s\n",
-					s);
+			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "unknown memory mode %s\n", s);
 			return FALSE;
 		}
+
+		//upload the vpu code if appropriate
+		if (IsEnabledVpuOffload())
+		{
+			if (UploadVcCode(GetVpuMemoryBase()))
+			{
+				xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "failed to upload VPU code\n");
+
+				UnloadVcCode();
+				CloseVcMbox();
+
+				return FALSE;
+			}
+			else
+			{
+				xf86DrvMsg(pScrn->scrnIndex, X_INFO, "VPU code uploaded to bus address %lx\n", (unsigned long)GetVpuMemoryBase() + GetBusOffset());
+
+				//check if it works (fingers crossed)
+				xf86DrvMsg(pScrn->scrnIndex, X_INFO, "NOTE: if it hangs at the next line, ctrl-z, sync and reboot your Raspberry Pi\n");
+				xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Checking that it works...\n");
+				int offset;
+				if (FindSymbolByName("Identify", &offset))
+				{
+					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Could not find Identify function\n");
+					UnloadVcCode();
+					CloseVcMbox();
+
+					return FALSE;
+				}
+
+				unsigned long code_at = (unsigned long)GetVpuMemoryBase() + GetBusOffset() + offset;
+				unsigned int ret = ExecuteVcCode(code_at, 0, 0, 0, 0, 0, 0);
+
+				//if this simply fails then either the binary is invalid or the execute commands doesn't work correctly
+				//if it hangs then either the code is invalid or the behaviour of the execute command has changed
+				if (ret != 0xc0dec0de)
+				{
+					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Could not identify itself correctly (error %08x)\n", ret);
+					UnloadVcCode();
+					CloseVcMbox();
+
+					return FALSE;
+				}
+
+				xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Identified correctly\n");
+
+				//get and check the version number
+				if (FindSymbolByName("GetVersion", &offset))
+				{
+					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Could not find GetVersion function\n");
+					UnloadVcCode();
+					CloseVcMbox();
+
+					return FALSE;
+				}
+
+				code_at = (unsigned long)GetVpuMemoryBase() + GetBusOffset() + offset;
+				ret = ExecuteVcCode(code_at, 0, 0, 0, 0, 0, 0);
+
+				unsigned int major = ret >> 16;
+				unsigned int minor = ret & 0xffff;
+
+				if (major > 1 || minor > 2)
+				{
+					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Version of VPU binary is too new for this driver, %d.%d\n", major, minor);
+					UnloadVcCode();
+					CloseVcMbox();
+
+					return FALSE;
+				}
+				else
+					xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Using version %d.%d of binary\n", major, minor);
+			}
+		}
+
 	}
 	else
 		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Acceleration disabled\n");
@@ -654,8 +852,8 @@ static Bool FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc,
 		pExa->memoryBase = GetMemoryBase();
 		pExa->memorySize = GetMemorySize();
 		pExa->offScreenBase = 0;
-		pExa->pixmapOffsetAlign = 1;
-		pExa->pixmapPitchAlign = 1;
+		pExa->pixmapOffsetAlign = 4;
+		pExa->pixmapPitchAlign = 4;
 		pExa->maxX = 2048;
 		pExa->maxY = 2048;
 
@@ -671,9 +869,11 @@ static Bool FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc,
 				kern_get_max_burst());
 		SetMaxAxiBurst(kern_get_max_burst());		//and program X to use it
 
+//		xf86DrvMsg(scrnIndex, X_INFO, "beginning benchmarks\n");
 //		BenchCopy();
 //		BenchFill();
 //		BenchComposite();
+//		xf86DrvMsg(scrnIndex, X_INFO, "benchmarks done\n");
 
 		if (g_nullDriver)
 		{
@@ -700,13 +900,27 @@ static Bool FBDevScreenInit(int scrnIndex, ScreenPtr pScreen, int argc,
 			pExa->WaitMarker = WaitMarker;
 			//		pExa->MarkSync = MarkSync;
 
-			//		pExa->PrepareAccess = PrepareAccess;
-			//		pExa->FinishAccess = FinishAccess;
-			//
-//			pExa->CreatePixmap = CreatePixmap;
-//			pExa->DestroyPixmap = DestroyPixmap;
-			//		pExa->PixmapIsOffscreen = PixmapIsOffscreen;
-			//		pExa->ModifyPixmapHeader = ModifyPixmapHeader;
+			//////////////////////////
+			if (xf86ReturnOptValBool(fPtr->Options, OPTION_SELF_MANAGED_OFFSCREEN, FALSE))
+			{
+				xf86DrvMsg(scrnIndex, X_CONFIG, "Experimental self-managed memory\n");
+
+				//turn on the memory allocator, after we stamp over the memory
+				InitOffscreenAlloc();
+
+				pExa->flags |= EXA_SUPPORTS_PREPARE_AUX;
+				pExa->flags |= EXA_HANDLES_PIXMAPS;
+				pExa->flags |= EXA_MIXED_PIXMAPS;
+
+				pExa->PrepareAccess = PrepareAccess;
+				pExa->FinishAccess = FinishAccess;
+
+				pExa->CreatePixmap = CreatePixmap;
+				pExa->DestroyPixmap = DestroyPixmap;
+				pExa->PixmapIsOffscreen = PixmapIsOffscreen;
+				//		pExa->ModifyPixmapHeader = ModifyPixmapHeader;
+			}
+			//////////////////////////
 
 			pExa->PrepareSolid = PrepareSolid;
 			pExa->Solid = Solid;
@@ -800,7 +1014,12 @@ static Bool FBDevCloseScreen(int scrnIndex, ScreenPtr pScreen)
 
 	pScreen->CreateScreenResources = fPtr->CreateScreenResources;
 	pScreen->CloseScreen = fPtr->CloseScreen;
-	return (*pScreen->CloseScreen)(scrnIndex, pScreen);
+	Bool ret = (*pScreen->CloseScreen)(scrnIndex, pScreen);
+
+	//turn off the allocator
+	DestroyOffscreenAlloc();
+
+	return ret;
 }
 
 static Bool FBDevDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op, pointer ptr)
