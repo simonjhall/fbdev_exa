@@ -448,52 +448,6 @@ static Bool FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 				return FALSE;
 			}
 
-			//add sub-programs
-			/*s = xf86GetOptValString(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalid);
-			if (s)
-			{
-				int patch;
-				if (!xf86GetOptValInteger(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalidPatch, &patch))
-				{
-					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Sub binary supplied but with no patch address\n");
-					CloseVcMbox();
-					return FALSE;
-				}
-
-				space_needed += LoadVcCode(s, 0, patch);
-			}
-			s = xf86GetOptValString(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_a8_valid_nonvarying);
-			if (s)
-			{
-				int patch;
-				if (!xf86GetOptValInteger(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_a8_valid_nonvaryingPatch, &patch))
-				{
-					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Sub binary supplied but with no patch address\n");
-					CloseVcMbox();
-					return FALSE;
-				}
-
-				space_needed += LoadVcCode(s, 0, patch);
-			}
-			s = xf86GetOptValString(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalid_normal);
-			if (s)
-			{
-				int patch;
-				if (!xf86GetOptValInteger(fPtr->Options, OPTION_vpu_over_a8r8g8b8_x8b8g8r8_invalid_normalPatch, &patch))
-				{
-					xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Sub binary supplied but with no patch address\n");
-					CloseVcMbox();
-					return FALSE;
-				}
-
-				space_needed += LoadVcCode(s, 0, patch);
-			}
-			s = xf86GetOptValString(fPtr->Options, OPTION_VpuComposite);
-			if (s)
-			{
-				space_needed += LoadVcCode(s, 0, -1);
-			}*/
-
 			xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "%d bytes of GPU-visible memory needed for VPU code\n", space_needed);
 
 			SetVpuCodeSize(space_needed);

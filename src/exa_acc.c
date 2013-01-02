@@ -375,7 +375,7 @@ int CreateOffscreenMemory(enum OffscreenMemMode m)
 		//basic check
 		if (g_offscreenSize & 4095)
 		{
-			xf86DrvMsg(0, X_ERROR, "CMA requires memory size to be multiple of page size (4096 bytes)\n");
+			xf86DrvMsg(0, X_ERROR, "VC requires memory size to be multiple of page size (4096 bytes)\n");
 			return 1;
 		}
 
@@ -391,7 +391,7 @@ int CreateOffscreenMemory(enum OffscreenMemMode m)
 
 		if (!arm_phys)
 		{
-			xf86DrvMsg(0, X_ERROR, "failed to allocate CMA memory from VC\n");
+			xf86DrvMsg(0, X_ERROR, "failed to allocate memory from VC\n");
 			return 1;
 		}
 

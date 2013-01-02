@@ -1,5 +1,5 @@
 #ifndef _GENERIC_TYPES_H_
-#define GENERIC_TYPES_H_
+#define _GENERIC_TYPES_H_
 
 #ifdef __llvm__
 #define MY_ASSERT(x) if (!(x)) __builtin_trap();
