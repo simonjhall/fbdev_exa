@@ -221,14 +221,11 @@ Bool CheckComposite(int op, PicturePtr pSrcPicture,
 	g_pCompositorVpu = 0;
 	g_pixelsToProcess = 0;
 
+	//no repeat = ok
 	//repeat flag + no drawable = ok
 	//repeat flag + drawable 1x1 = ok
 	//repeat flag + drawable >1x1 = not ok
-	BOOL source_wrap_reqd2 = pSrcPicture->repeat && (!pSrcPicture->pDrawable || pSrcPicture->pDrawable->width != 1 || pSrcPicture->pDrawable->height != 1);
 	BOOL source_wrap_reqd = pSrcPicture->repeat && pSrcPicture->pDrawable && (pSrcPicture->pDrawable->width > 1 || pSrcPicture->pDrawable->height > 1);
-
-	if (source_wrap_reqd != source_wrap_reqd2)
-		fprintf(stderr, "systems disagree %d %d\n", source_wrap_reqd, source_wrap_reqd2);
 
 	//get our composite function
 	if (!IsEnabledVpuOffload() || source_wrap_reqd || !(g_pCompositorVpu = EnumToFuncVpuWrap(op,
