@@ -2,7 +2,8 @@
  * simple_composite.c
  *
  *  Created on: 1 Dec 2012
- *      Author: Simon
+ *      Author: Simon Hall
+ * Code that is not used in the driver, but was used as a base for the VPU code
  */
 
 #include "generic_types.h"

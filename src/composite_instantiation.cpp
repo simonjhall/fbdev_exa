@@ -2,7 +2,8 @@
  * composite_instantiation.cpp
  *
  *  Created on: 9 Sep 2012
- *      Author: Simon
+ *      Author: Simon Hall
+ *  Compile-time template instantiation and run-time selection of CPU composition functions.
  */
 
 

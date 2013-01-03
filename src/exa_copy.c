@@ -2,7 +2,8 @@
  * exa_copy.c
  *
  *  Created on: 5 Aug 2012
- *      Author: simon
+ *      Author: Simon Hall
+ * Implements the EXA copy functionality.
  */
 
 #ifdef HAVE_CONFIG_H

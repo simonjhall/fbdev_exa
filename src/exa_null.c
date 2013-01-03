@@ -1,3 +1,8 @@
+/*
+ * Author: Simon Hall
+ * Implements the null driver by simply doing no work, despite saying it can perform everything.
+ * This gives complete display corruption, but is useful for benchmarking.
+ */
 #include <sys/time.h>
 
 #ifdef HAVE_CONFIG_H

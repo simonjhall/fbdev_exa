@@ -1,3 +1,7 @@
+/*
+ * Author: Simon Hall
+ * Used to fill in DMA CBs
+ */
 #ifndef _EXA_COPIES_INL_
 #define _EXA_COPIES_INL_
 

@@ -2,7 +2,9 @@
  * exa_copies.c
  *
  *  Created on: 5 Aug 2012
- *      Author: simon
+ *      Author: Simon Hall
+ * Wrapping up the various copy functions, to be run with DMA.
+ * This includes all the code for breaking into 4k pages where appropriate.
  */
 
 #ifdef HAVE_CONFIG_H

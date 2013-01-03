@@ -1,3 +1,8 @@
+/*
+ * Author: Simon Hall
+ * Types which require no additional includes, mainly used for template instantiation
+ * and the VPU assembly.
+ */
 #ifndef _GENERIC_TYPES_H_
 #define _GENERIC_TYPES_H_
 

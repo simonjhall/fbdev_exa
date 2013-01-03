@@ -2,7 +2,8 @@
  * exa_upload_download.c
  *
  *  Created on: 5 Aug 2012
- *      Author: simon
+ *      Author: Simon Hall
+ * Implements the EXA upload/download functionality with either DMA or the CPU fallback
  */
 
 #ifdef HAVE_CONFIG_H

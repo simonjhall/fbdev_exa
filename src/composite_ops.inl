@@ -1,3 +1,8 @@
+/*
+ * Author: Simon Hall
+ * Template-based image composition. This, in conjunction with composite_instantiation.cpp, is used to generate
+ * several hundred composition functions, each of which is sufficiently performant. Uses ARMv6 SIMD intrinsics.
+ */
 #include "generic_types.h"
 
 //#define DEBUG

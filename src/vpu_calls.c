@@ -2,7 +2,8 @@
  * vpu_calls.c
  *
  *  Created on: 3 Dec 2012
- *      Author: Simon
+ *      Author: Simon Hall
+ * VPU equivalent of composite_instantiation.cpp
  */
 
 #ifdef HAVE_CONFIG_H

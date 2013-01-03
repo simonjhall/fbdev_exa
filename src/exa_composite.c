@@ -2,7 +2,10 @@
  * exa_composite.c
  *
  *  Created on: 5 Aug 2012
- *      Author: simon
+ *      Author: Simon Hall
+ * Implementation of the RENDER composite function.
+ * This includes testing to see if a function can be run, selecting the compositor (either cpu and/or vpu)
+ * packaging up all the date and running batches of composite operations.
  */
 
 #ifdef HAVE_CONFIG_H

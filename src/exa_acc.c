@@ -1,3 +1,8 @@
+/*
+ * Author: Simon Hall
+ * This is the main controlling file for the driver. Managed DMA kicks and offscreen memory management.
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif

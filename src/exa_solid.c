@@ -2,7 +2,8 @@
  * exa_solid.c
  *
  *  Created on: 7 Aug 2012
- *      Author: simon
+ *      Author: Simon Hall
+ * Implements the EXA solid functionality with either DMA or a CPU fallback.
  */
 
 #ifdef HAVE_CONFIG_H

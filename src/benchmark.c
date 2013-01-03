@@ -2,7 +2,9 @@
  * benchmark.c
  *
  *  Created on: 25 Nov 2012
- *      Author: Simon
+ *      Author: Simon Hall
+ *  Some code to test the speed of DMA and all the composition operations, both CPU and VPU.
+ *  Also includes the fallback code.
  */
 
 #ifdef HAVE_CONFIG_H

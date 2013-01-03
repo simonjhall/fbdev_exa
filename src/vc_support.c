@@ -2,7 +2,9 @@
  * vc_support.c
  *
  *  Created on: 3 Dec 2012
- *      Author: Simon
+ *      Author: Simon Hall
+ * Some support code for interfacing with the VC mailbox interface, loading and parsing VPU code,
+ * uploading and executing it.
  */
 
 #ifdef HAVE_CONFIG_H

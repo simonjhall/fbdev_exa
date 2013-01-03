@@ -1,3 +1,8 @@
+/*
+ * Author: Simon Hall
+ * Emulates execution of DMA CB chains
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif

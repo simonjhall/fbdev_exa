@@ -2,7 +2,7 @@
  * vc_support.h
  *
  *  Created on: 3 Dec 2012
- *      Author: Simon
+ *      Author: Simon Hall
  */
 
 #ifndef VC_SUPPORT_H_

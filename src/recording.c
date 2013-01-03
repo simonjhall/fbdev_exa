@@ -2,7 +2,8 @@
  * recording.c
  *
  *  Created on: 18 Dec 2012
- *      Author: Simon
+ *      Author: Simon Hall
+ * Used to record the number of each call.
  */
 
 #ifdef HAVE_CONFIG_H

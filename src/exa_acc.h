@@ -1,3 +1,8 @@
+/*
+ * Author: Simon Hall
+ * header file that enumerates all the main functions within the driver
+ */
+
 #ifndef _EXA_ACC_H_
 #define _EXA_ACC_H_
 

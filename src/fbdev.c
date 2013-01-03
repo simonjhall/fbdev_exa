@@ -1,6 +1,11 @@
 /*
+ * ORIGINAL FBDEV DRIVER
  * Authors:  Alan Hourihane, <alanh@fairlite.demon.co.uk>
  *	     Michel Dänzer, <michel@tungstengraphics.com>
+ * RASPBERRY PI DRIVER
+ * Author: Simon Hall Hall https://github.com/simonjhall
+ *
+ * The main driver entry point. Does all the setting up of stuff and parsing of the config file.
  */
 
 #ifdef HAVE_CONFIG_H
