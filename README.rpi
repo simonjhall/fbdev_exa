@@ -1,1 +1,10 @@
-Please see http://elinux.org/RPi_Xorg_rpi_Driver for all information
+This is an Xorg driver for the Raspberry Pi
+
+Please see http://elinux.org/RPi_Xorg_rpi_Driver for information regarding its design, installation, configuration and troubleshooting.
+This also includes information on how and where to submit bugs.
+
+The driver offloads large composition operations to a proprietary co-processor for which there is no publicly-available documentation. Its instruction set has been reverse engineered by a third party group, and this composition code makes use of this reverse engineer effort. If you are to use this driver feature in a country where reverse engineering or the use of knowledge derived through reverse engineering is not permitted, then please disable this option ("VpuOffload") in the driver configuration file.
+
+The ARM-side driver is released under the existing license that the fbdev driver it was derived from originally used.
+The modifications to the X server itself are released under the original license Xorg 7.7 uses.
+The VPU code is an independent module and is closed source and not provided here. Do what you wish with the compiled VPU binary however.
