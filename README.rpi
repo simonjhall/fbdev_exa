@@ -5,6 +5,27 @@ This also includes information on how and where to submit bugs.
 
 The driver offloads large composition operations to a proprietary co-processor for which there is no publicly-available documentation. Its instruction set has been reverse engineered by a third party group, and this composition code makes use of this reverse engineer effort. If you are to use this driver feature in a country where reverse engineering or the use of knowledge derived through reverse engineering is not permitted, then please disable this option ("VpuOffload") in the driver configuration file.
 
-The ARM-side driver is released under the existing license that the fbdev driver it was derived from originally used.
+The ARM-side driver is released under the GNU Lesser General Public License version 2.1. See http://www.gnu.org/licenses/ for details. No warranty is provided.
 The modifications to the X server itself are released under the original license Xorg 7.7 uses.
 The VPU code is an independent module and is closed source and not provided here. Do what you wish with the compiled VPU binary however.
+
+The third-party effort to document the VPU contained at https://github.com/hermanhermitage/videocoreiv/wiki is public domain or, if that is insufficient:
+
+######################################################################
+# This work is covered by the following variation of the WTFPL:
+#
+#             DO WHAT YOU WANT TO PUBLIC LICENSE
+#                     Version 1, December 2012
+#
+#  Copyright (C) 2012 The contributors.
+#
+#  Everyone is permitted to copy and distribute verbatim or modified
+#  copies of this license document, and changing it is allowed as long
+#  as the name is changed.
+#
+#             DO WHAT YOU WANT TO PUBLIC LICENSE
+#    TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+#
+#   0. You just DO WHAT YOU WANT TO.
+#
+######################################################################
